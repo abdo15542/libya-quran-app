@@ -1,14 +1,14 @@
-// ============ وحدة الترجمات — مع تحميل ديناميكي ============
+// ============ وحدة الترجمات — جميع الترجمات مضمّنة ============
 
 const TRANSLATION_SOURCES = {
-  en:  { name: 'English',   flag: '🇬🇧', script: 'trans-en', bundled: true },
-  fr:  { name: 'Français',  flag: '🇫🇷', script: 'trans-fr', bundled: false },
-  it:  { name: 'Italiano',  flag: '🇮🇹', script: 'trans-it', bundled: false },
-  ber: { name: 'ⴰⵎⴰⵣⵉⵖ',    flag: '🇱🇾', script: 'trans-ber', bundled: false },
-  es:  { name: 'Español',   flag: '🇪🇸', script: 'trans-es', bundled: false },
-  de:  { name: 'Deutsch',   flag: '🇩🇪', script: 'trans-de', bundled: false },
-  ru:  { name: 'Русский',   flag: '🇷🇺', script: 'trans-ru', bundled: false },
-  tr:  { name: 'Türkçe',    flag: '🇹🇷', script: 'trans-tr', bundled: false },
+  en:  { name: 'English',   flag: '🇬🇧', script: 'trans-en' },
+  fr:  { name: 'Français',  flag: '🇫🇷', script: 'trans-fr' },
+  it:  { name: 'Italiano',  flag: '🇮🇹', script: 'trans-it' },
+  ber: { name: 'ⴰⵎⴰⵣⵉⵖ',    flag: '🇱🇾', script: 'trans-ber' },
+  es:  { name: 'Español',   flag: '🇪🇸', script: 'trans-es' },
+  de:  { name: 'Deutsch',   flag: '🇩🇪', script: 'trans-de' },
+  ru:  { name: 'Русский',   flag: '🇷🇺', script: 'trans-ru' },
+  tr:  { name: 'Türkçe',    flag: '🇹🇷', script: 'trans-tr' },
 };
 
 let _transCache = {};
@@ -18,6 +18,14 @@ function tLoadScript(src) {
   return new Promise((resolve, reject) => {
     if (_tScriptState[src] === 'ok') return resolve();
     if (_tScriptState[src] === 'error') return reject(new Error('فشل سابق'));
+    if (_tScriptState[src] === 'pending') {
+      const t = setInterval(() => {
+        if (_tScriptState[src] === 'ok') { clearInterval(t); resolve(); }
+        else if (_tScriptState[src] === 'error') { clearInterval(t); reject(new Error('فشل')); }
+      }, 100);
+      setTimeout(() => { clearInterval(t); reject(new Error('مهلة')); }, 60000);
+      return;
+    }
     _tScriptState[src] = 'pending';
     const s = document.createElement('script');
     s.src = src;
@@ -50,17 +58,11 @@ async function loadTranslation(lang) {
     }
   } catch (e) {}
 
-  const info = TRANSLATION_SOURCES[lang];
-  const baseName = info.script;
+  const baseName = TRANSLATION_SOURCES[lang].script;
+  const scriptPath = 'data/' + baseName + '.js';
 
-  if (info.bundled) {
-    if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
-      await tLoadScript('data/' + baseName + '.js');
-    }
-  } else {
-    if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
-      throw new Error('هذه الترجمة تحتاج إلى تحميل حزمة البيانات الإضافية أولاً. اضغط على "تحميل التفاسير الإضافية" في الإعدادات.');
-    }
+  if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
+    await tLoadScript(scriptPath);
   }
 
   const b64 = window.QURAN_DATA && window.QURAN_DATA[baseName];
@@ -94,7 +96,7 @@ function getVerseTranslation(data, surahNum, ayahNum) {
 
 async function getAvailableTranslations() {
   return Object.entries(TRANSLATION_SOURCES).map(([lang, info]) => ({
-    lang, name: info.name, flag: info.flag, bundled: info.bundled, downloaded: true,
+    lang, name: info.name, flag: info.flag, downloaded: true,
   }));
 }
 
