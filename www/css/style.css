@@ -134,3 +134,58 @@ body {
 }
 .modal-content h3 { color: var(--green); margin-bottom: 1rem; }
 [data-theme="dark"] .modal-content h3 { color: var(--gold); }
+
+/* ========== إضافات المرحلة 2 ========== */
+:root { --font-size: 1.6rem; }
+
+.verses-container { font-size: var(--font-size); }
+
+.bismillah {
+  text-align: center;
+  color: var(--gold);
+  font-size: calc(var(--font-size) * 1.05);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.search-input {
+  width: 100%; padding: .6rem .8rem; margin: .5rem 0 1rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--verse-bg); color: var(--text);
+  font-family: inherit; font-size: 1rem;
+}
+
+.verse-actions-btn {
+  position: absolute; top: .5rem; left: .5rem;
+  background: transparent; border: 1px solid var(--border);
+  width: 28px; height: 28px; border-radius: 50%;
+  cursor: pointer; color: var(--text-2); font-size: .9rem;
+  opacity: 0; transition: opacity .2s;
+}
+.verse:hover .verse-actions-btn { opacity: 1; }
+
+.verse-actions button {
+  display: block; width: 100%; text-align: right;
+  padding: .7rem; margin: .35rem 0;
+  background: var(--verse-bg); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; color: var(--text);
+  font-family: inherit; font-size: 1rem;
+}
+.verse-actions button:hover { background: var(--verse-active); }
+
+.settings label {
+  display: block; margin: .75rem 0 .25rem;
+  font-weight: bold; font-size: .95rem; color: var(--text-2);
+}
+.settings input[type="range"] { width: 100%; }
+.settings select {
+  width: 100%; padding: .5rem; border-radius: 6px;
+  background: var(--verse-bg); color: var(--text);
+  border: 1px solid var(--border); font-family: inherit;
+}
+
+/* شارة نوع السورة في القائمة */
+.surah-list li .surah-type {
+  font-size: .75rem; opacity: .5; margin-left: .5rem;
+}

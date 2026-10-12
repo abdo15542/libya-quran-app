@@ -1,0 +1,187 @@
+// سكربت لتنزيل المصحف الكامل برواية قالون + بيانات السور
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+
+const DATA_DIR = path.join(__dirname, '..', 'www', 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function fetchUrl(url) {
+  return new Promise((resolve, reject) => {
+    console.log('→ تحميل:', url);
+    https.get(url, { headers: { 'User-Agent': 'libya-quran-app' } }, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        return fetchUrl(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error('HTTP ' + res.statusCode + ' — ' + url));
+      }
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+// بيانات السور الوصفية (114 سورة)
+const SURAH_META = [
+  { n:1, name:'الفاتحة', en:'Al-Fatihah', verses:7, type:'مكية' },
+  { n:2, name:'البقرة', en:'Al-Baqarah', verses:286, type:'مدنية' },
+  { n:3, name:'آل عمران', en:'Ali Imran', verses:200, type:'مدنية' },
+  { n:4, name:'النساء', en:'An-Nisa', verses:176, type:'مدنية' },
+  { n:5, name:'المائدة', en:'Al-Maidah', verses:120, type:'مدنية' },
+  { n:6, name:'الأنعام', en:'Al-Anam', verses:165, type:'مكية' },
+  { n:7, name:'الأعراف', en:'Al-Araf', verses:206, type:'مكية' },
+  { n:8, name:'الأنفال', en:'Al-Anfal', verses:75, type:'مدنية' },
+  { n:9, name:'التوبة', en:'At-Tawbah', verses:129, type:'مدنية' },
+  { n:10, name:'يونس', en:'Yunus', verses:109, type:'مكية' },
+  { n:11, name:'هود', en:'Hud', verses:123, type:'مكية' },
+  { n:12, name:'يوسف', en:'Yusuf', verses:111, type:'مكية' },
+  { n:13, name:'الرعد', en:'Ar-Rad', verses:43, type:'مدنية' },
+  { n:14, name:'إبراهيم', en:'Ibrahim', verses:52, type:'مكية' },
+  { n:15, name:'الحجر', en:'Al-Hijr', verses:99, type:'مكية' },
+  { n:16, name:'النحل', en:'An-Nahl', verses:128, type:'مكية' },
+  { n:17, name:'الإسراء', en:'Al-Isra', verses:111, type:'مكية' },
+  { n:18, name:'الكهف', en:'Al-Kahf', verses:110, type:'مكية' },
+  { n:19, name:'مريم', en:'Maryam', verses:98, type:'مكية' },
+  { n:20, name:'طه', en:'Ta-Ha', verses:135, type:'مكية' },
+  { n:21, name:'الأنبياء', en:'Al-Anbiya', verses:112, type:'مكية' },
+  { n:22, name:'الحج', en:'Al-Hajj', verses:78, type:'مدنية' },
+  { n:23, name:'المؤمنون', en:'Al-Muminun', verses:118, type:'مكية' },
+  { n:24, name:'النور', en:'An-Nur', verses:64, type:'مدنية' },
+  { n:25, name:'الفرقان', en:'Al-Furqan', verses:77, type:'مكية' },
+  { n:26, name:'الشعراء', en:'Ash-Shuara', verses:227, type:'مكية' },
+  { n:27, name:'النمل', en:'An-Naml', verses:93, type:'مكية' },
+  { n:28, name:'القصص', en:'Al-Qasas', verses:88, type:'مكية' },
+  { n:29, name:'العنكبوت', en:'Al-Ankabut', verses:69, type:'مكية' },
+  { n:30, name:'الروم', en:'Ar-Rum', verses:60, type:'مكية' },
+  { n:31, name:'لقمان', en:'Luqman', verses:34, type:'مكية' },
+  { n:32, name:'السجدة', en:'As-Sajdah', verses:30, type:'مكية' },
+  { n:33, name:'الأحزاب', en:'Al-Ahzab', verses:73, type:'مدنية' },
+  { n:34, name:'سبأ', en:'Saba', verses:54, type:'مكية' },
+  { n:35, name:'فاطر', en:'Fatir', verses:45, type:'مكية' },
+  { n:36, name:'يس', en:'Ya-Sin', verses:83, type:'مكية' },
+  { n:37, name:'الصافات', en:'As-Saffat', verses:182, type:'مكية' },
+  { n:38, name:'ص', en:'Sad', verses:88, type:'مكية' },
+  { n:39, name:'الزمر', en:'Az-Zumar', verses:75, type:'مكية' },
+  { n:40, name:'غافر', en:'Ghafir', verses:85, type:'مكية' },
+  { n:41, name:'فصلت', en:'Fussilat', verses:54, type:'مكية' },
+  { n:42, name:'الشورى', en:'Ash-Shura', verses:53, type:'مكية' },
+  { n:43, name:'الزخرف', en:'Az-Zukhruf', verses:89, type:'مكية' },
+  { n:44, name:'الدخان', en:'Ad-Dukhan', verses:59, type:'مكية' },
+  { n:45, name:'الجاثية', en:'Al-Jathiyah', verses:37, type:'مكية' },
+  { n:46, name:'الأحقاف', en:'Al-Ahqaf', verses:35, type:'مكية' },
+  { n:47, name:'محمد', en:'Muhammad', verses:38, type:'مدنية' },
+  { n:48, name:'الفتح', en:'Al-Fath', verses:29, type:'مدنية' },
+  { n:49, name:'الحجرات', en:'Al-Hujurat', verses:18, type:'مدنية' },
+  { n:50, name:'ق', en:'Qaf', verses:45, type:'مكية' },
+  { n:51, name:'الذاريات', en:'Adh-Dhariyat', verses:60, type:'مكية' },
+  { n:52, name:'الطور', en:'At-Tur', verses:49, type:'مكية' },
+  { n:53, name:'النجم', en:'An-Najm', verses:62, type:'مكية' },
+  { n:54, name:'القمر', en:'Al-Qamar', verses:55, type:'مكية' },
+  { n:55, name:'الرحمن', en:'Ar-Rahman', verses:78, type:'مدنية' },
+  { n:56, name:'الواقعة', en:'Al-Waqiah', verses:96, type:'مكية' },
+  { n:57, name:'الحديد', en:'Al-Hadid', verses:29, type:'مدنية' },
+  { n:58, name:'المجادلة', en:'Al-Mujadila', verses:22, type:'مدنية' },
+  { n:59, name:'الحشر', en:'Al-Hashr', verses:24, type:'مدنية' },
+  { n:60, name:'الممتحنة', en:'Al-Mumtahanah', verses:13, type:'مدنية' },
+  { n:61, name:'الصف', en:'As-Saff', verses:14, type:'مدنية' },
+  { n:62, name:'الجمعة', en:'Al-Jumuah', verses:11, type:'مدنية' },
+  { n:63, name:'المنافقون', en:'Al-Munafiqun', verses:11, type:'مدنية' },
+  { n:64, name:'التغابن', en:'At-Taghabun', verses:18, type:'مدنية' },
+  { n:65, name:'الطلاق', en:'At-Talaq', verses:12, type:'مدنية' },
+  { n:66, name:'التحريم', en:'At-Tahrim', verses:12, type:'مدنية' },
+  { n:67, name:'الملك', en:'Al-Mulk', verses:30, type:'مكية' },
+  { n:68, name:'القلم', en:'Al-Qalam', verses:52, type:'مكية' },
+  { n:69, name:'الحاقة', en:'Al-Haqqah', verses:52, type:'مكية' },
+  { n:70, name:'المعارج', en:'Al-Maarij', verses:44, type:'مكية' },
+  { n:71, name:'نوح', en:'Nuh', verses:28, type:'مكية' },
+  { n:72, name:'الجن', en:'Al-Jinn', verses:28, type:'مكية' },
+  { n:73, name:'المزمل', en:'Al-Muzzammil', verses:20, type:'مكية' },
+  { n:74, name:'المدثر', en:'Al-Muddaththir', verses:56, type:'مكية' },
+  { n:75, name:'القيامة', en:'Al-Qiyamah', verses:40, type:'مكية' },
+  { n:76, name:'الإنسان', en:'Al-Insan', verses:31, type:'مدنية' },
+  { n:77, name:'المرسلات', en:'Al-Mursalat', verses:50, type:'مكية' },
+  { n:78, name:'النبأ', en:'An-Naba', verses:40, type:'مكية' },
+  { n:79, name:'النازعات', en:'An-Naziat', verses:46, type:'مكية' },
+  { n:80, name:'عبس', en:'Abasa', verses:42, type:'مكية' },
+  { n:81, name:'التكوير', en:'At-Takwir', verses:29, type:'مكية' },
+  { n:82, name:'الانفطار', en:'Al-Infitar', verses:19, type:'مكية' },
+  { n:83, name:'المطففين', en:'Al-Mutaffifin', verses:36, type:'مكية' },
+  { n:84, name:'الانشقاق', en:'Al-Inshiqaq', verses:25, type:'مكية' },
+  { n:85, name:'البروج', en:'Al-Buruj', verses:22, type:'مكية' },
+  { n:86, name:'الطارق', en:'At-Tariq', verses:17, type:'مكية' },
+  { n:87, name:'الأعلى', en:'Al-Ala', verses:19, type:'مكية' },
+  { n:88, name:'الغاشية', en:'Al-Ghashiyah', verses:26, type:'مكية' },
+  { n:89, name:'الفجر', en:'Al-Fajr', verses:30, type:'مكية' },
+  { n:90, name:'البلد', en:'Al-Balad', verses:20, type:'مكية' },
+  { n:91, name:'الشمس', en:'Ash-Shams', verses:15, type:'مكية' },
+  { n:92, name:'الليل', en:'Al-Layl', verses:21, type:'مكية' },
+  { n:93, name:'الضحى', en:'Ad-Duha', verses:11, type:'مكية' },
+  { n:94, name:'الشرح', en:'Ash-Sharh', verses:8, type:'مكية' },
+  { n:95, name:'التين', en:'At-Tin', verses:8, type:'مكية' },
+  { n:96, name:'العلق', en:'Al-Alaq', verses:19, type:'مكية' },
+  { n:97, name:'القدر', en:'Al-Qadr', verses:5, type:'مكية' },
+  { n:98, name:'البينة', en:'Al-Bayyinah', verses:8, type:'مدنية' },
+  { n:99, name:'الزلزلة', en:'Az-Zalzalah', verses:8, type:'مدنية' },
+  { n:100, name:'العاديات', en:'Al-Adiyat', verses:11, type:'مكية' },
+  { n:101, name:'القارعة', en:'Al-Qariah', verses:11, type:'مكية' },
+  { n:102, name:'التكاثر', en:'At-Takathur', verses:8, type:'مكية' },
+  { n:103, name:'العصر', en:'Al-Asr', verses:3, type:'مكية' },
+  { n:104, name:'الهمزة', en:'Al-Humazah', verses:9, type:'مكية' },
+  { n:105, name:'الفيل', en:'Al-Fil', verses:5, type:'مكية' },
+  { n:106, name:'قريش', en:'Quraysh', verses:4, type:'مكية' },
+  { n:107, name:'الماعون', en:'Al-Maun', verses:7, type:'مكية' },
+  { n:108, name:'الكوثر', en:'Al-Kawthar', verses:3, type:'مكية' },
+  { n:109, name:'الكافرون', en:'Al-Kafirun', verses:6, type:'مكية' },
+  { n:110, name:'النصر', en:'An-Nasr', verses:3, type:'مدنية' },
+  { n:111, name:'المسد', en:'Al-Masad', verses:5, type:'مكية' },
+  { n:112, name:'الإخلاص', en:'Al-Ikhlas', verses:4, type:'مكية' },
+  { n:113, name:'الفلق', en:'Al-Falaq', verses:5, type:'مكية' },
+  { n:114, name:'الناس', en:'An-Nas', verses:6, type:'مكية' },
+];
+
+async function main() {
+  // 1. حفظ بيانات السور
+  fs.writeFileSync(
+    path.join(DATA_DIR, 'surahs.json'),
+    JSON.stringify(SURAH_META, null, 0)
+  );
+  console.log('✓ surahs.json (' + SURAH_META.length + ' سورة)');
+
+  // 2. تنزيل نص المصحف الكامل — نجرّب عدة مصادر
+  const sources = [
+    'https://cdn.jsdelivr.net/gh/bwail/riwayat-quran-json@master/qaloon/quran.json',
+    'https://raw.githubusercontent.com/bwail/riwayat-quran-json/master/qaloon/quran.json',
+    'https://cdn.jsdelivr.net/gh/rn0x/quran-data@main/quran.json',
+  ];
+
+  let quranData = null;
+  for (const url of sources) {
+    try {
+      const text = await fetchUrl(url);
+      const parsed = JSON.parse(text);
+      quranData = parsed;
+      console.log('✓ تم التنزيل من: ' + url);
+      break;
+    } catch (e) {
+      console.warn('✗ فشل: ' + url + ' — ' + e.message);
+    }
+  }
+
+  if (quranData) {
+    fs.writeFileSync(
+      path.join(DATA_DIR, 'quran.json'),
+      JSON.stringify(quranData)
+    );
+    const size = (fs.statSync(path.join(DATA_DIR, 'quran.json')).size / 1024).toFixed(1);
+    console.log('✓ quran.json (' + size + ' KB)');
+  } else {
+    console.error('✗ فشل تنزيل المصحف من جميع المصادر');
+    console.error('  سيستخدم التطبيق النص المدمج فقط');
+  }
+
+  console.log('\n✅ اكتمل تجهيز البيانات في: www/data/');
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
