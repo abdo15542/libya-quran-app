@@ -342,3 +342,126 @@ body {
   opacity: 1;
   box-shadow: 0 0 0 2px var(--gold);
 }
+
+/* ========== التفسير والترجمة المضمّنة ========== */
+.verse { cursor: pointer; }
+
+.verse-body {
+  position: relative;
+}
+
+.verse-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin-top: .75rem;
+  padding-top: .75rem;
+  border-top: 1px dashed var(--border);
+}
+
+.verse-inline-actions button {
+  padding: .35rem .7rem;
+  background: var(--verse-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: .85rem;
+  color: var(--text);
+  transition: background .2s;
+}
+
+.verse-inline-actions button:hover {
+  background: var(--verse-active);
+}
+
+.verse-inline-actions .inline-close {
+  margin-right: auto;
+  color: var(--text-2);
+  padding: .35rem .55rem;
+}
+
+.verse-inline-content {
+  margin-top: .5rem;
+}
+
+.verse-inline-content:empty {
+  margin-top: 0;
+}
+
+.inline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  margin-bottom: .5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .4rem;
+}
+
+.inline-tab {
+  padding: .3rem .6rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: .78rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.inline-tab.active {
+  background: var(--green);
+  color: var(--gold);
+  border-color: var(--green);
+}
+
+.inline-body {
+  font-family: 'Traditional Arabic', 'Amiri', 'Scheherazade', serif;
+  font-size: 1.05rem;
+  line-height: 1.9;
+  padding: .75rem;
+  background: var(--verse-active);
+  border-radius: 6px;
+  border-right: 3px solid var(--gold);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.inline-loading,
+.inline-error {
+  padding: .75rem;
+  text-align: center;
+  font-size: .9rem;
+  color: var(--text-2);
+}
+
+.inline-error {
+  color: #c0392b;
+}
+
+.inline-note {
+  padding: .75rem;
+  background: #fff8dc;
+  border-radius: 6px;
+  border-right: 3px solid var(--gold);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+[data-theme="dark"] .inline-note {
+  background: #2a2515;
+}
+
+.verse.active {
+  box-shadow: 0 0 0 2px var(--gold);
+  transition: box-shadow .3s;
+}
+
+/* ترتيب أزرار شريط الأدوات بشكل أنيق على الشاشات الصغيرة */
+@media (max-width: 400px) {
+  .verse-inline-actions button {
+    font-size: .75rem;
+    padding: .3rem .5rem;
+  }
+}

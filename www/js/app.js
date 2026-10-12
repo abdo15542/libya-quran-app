@@ -53,8 +53,7 @@ async function init() {
 
     if (window.QuranSearch) {
       status.textContent = 'بناء فهرس البحث...';
-      const total = QuranSearch.build(state.data, state.surahsMeta);
-      console.log('فهرس البحث:', total, 'آية');
+      QuranSearch.build(state.data, state.surahsMeta);
     }
 
     status.textContent = 'جاهز!';
@@ -165,7 +164,6 @@ function renderSurah(num) {
   if (!container) return;
   container.innerHTML = '';
 
-  // البسملة (عدا التوبة)
   if (num !== 9) {
     const bs = document.createElement('div');
     bs.className = 'bismillah';
@@ -179,6 +177,7 @@ function renderSurah(num) {
     const div = document.createElement('div');
     div.className = 'verse';
     div.dataset.ayah = v.number;
+    div.dataset.surah = num;
     div.dataset.hide = (state.progress[num + ':' + v.number]?.hide) || 0;
 
     let processedText;
@@ -188,19 +187,40 @@ function renderSurah(num) {
       processedText = (v.text || '').split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ');
     }
 
+    const isBookmarked = isVerseBookmarked(num, v.number);
+
     div.innerHTML = `
-      <span class="verse-number">${v.number}</span>
-      <span class="verse-text">${processedText}</span>
-      <button class="verse-actions-btn" type="button">⋯</button>
+      <div class="verse-body">
+        <span class="verse-number">${v.number}</span>
+        <span class="verse-text">${processedText}</span>
+      </div>
+      <div class="verse-inline-actions hidden">
+        <button data-act="tafsir" type="button">📖 تفسير</button>
+        <button data-act="translation" type="button">🌐 ترجمة</button>
+        <button data-act="bookmark" type="button">${isBookmarked ? '🔖 إزالة' : '🔖 علامة'}</button>
+        <button data-act="note" type="button">📝 ملاحظة</button>
+        <button data-act="close" type="button" class="inline-close">✕</button>
+      </div>
+      <div class="verse-inline-content"></div>
     `;
 
     div.addEventListener('click', (e) => {
-      if (e.target.closest('.verse-actions-btn')) {
-        showVerseActions(num, v.number);
-      } else {
-        toggleVerseHide(div, num, v.number);
+      const btn = e.target.closest('.verse-inline-actions button');
+      if (btn) {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'tafsir')            toggleInlineTafsir(num, v.number, div);
+        else if (act === 'translation')  toggleInlineTranslation(num, v.number, div);
+        else if (act === 'bookmark')     toggleVerseBookmarkInline(num, v.number, div);
+        else if (act === 'note')         openVerseNoteInline(num, v.number, div);
+        else if (act === 'close')        closeVerseInline(div);
+        return;
       }
+      // تجاهل النقر داخل المحتوى المفتوح
+      if (e.target.closest('.verse-inline-content')) return;
+      if (e.target.closest('.verse-body')) toggleInlineActions(div);
     });
+
     container.appendChild(div);
   });
 
@@ -219,7 +239,25 @@ function navSurah(delta) {
   renderSurah(next);
 }
 
-// ==================== إخفاء الكلمات ====================
+// ==================== شريط الأدوات المضمّن ====================
+function toggleInlineActions(verseEl) {
+  const actions = verseEl.querySelector('.verse-inline-actions');
+  if (!actions) return;
+  // أغلق بقية الشرائط المفتوحة
+  document.querySelectorAll('.verse-inline-actions:not(.hidden)').forEach(el => {
+    if (el !== actions) el.classList.add('hidden');
+  });
+  actions.classList.toggle('hidden');
+}
+
+function closeVerseInline(verseEl) {
+  const actions = verseEl.querySelector('.verse-inline-actions');
+  const content = verseEl.querySelector('.verse-inline-content');
+  if (actions) actions.classList.add('hidden');
+  if (content) content.innerHTML = '';
+}
+
+// ==================== إخفاء الكلمات (حفظ) ====================
 function toggleVerseHide(el, surahNum, ayahNum) {
   const key = surahNum + ':' + ayahNum;
   const cur = state.progress[key]?.hide || 0;
@@ -229,65 +267,178 @@ function toggleVerseHide(el, surahNum, ayahNum) {
   DB.saveUserData('progress', state.progress);
 }
 
-// ==================== إجراءات الآية ====================
-function showVerseActions(surahNum, ayahNum) {
-  const key = surahNum + ':' + ayahNum;
-  const cur = state.progress[key] || {};
-  openModal('خيارات الآية', `
-    <div class="verse-actions">
-      <button onclick="repeatVerse(${surahNum},${ayahNum},3)">🔁 تكرار 3 مرات</button>
-      <button onclick="repeatVerse(${surahNum},${ayahNum},5)">🔁 تكرار 5 مرات</button>
-      <button onclick="repeatVerse(${surahNum},${ayahNum},10)">🔁 تكرار 10 مرات</button>
-      <button onclick="toggleVerseBookmark(${surahNum},${ayahNum})">
-        ${isVerseBookmarked(surahNum, ayahNum) ? '✖ إزالة العلامة' : '🔖 إضافة علامة'}
-      </button>
-      <button onclick="openVerseNote(${surahNum},${ayahNum})">📝 ملاحظة</button>
-      <button onclick="markMemorized(${surahNum},${ayahNum})">
-        ${cur.memorized ? '↺ إلغاء الحفظ' : '✅ تم الحفظ'}
-      </button>
-    </div>
-  `);
+// ==================== التفسير المضمّن ====================
+async function toggleInlineTafsir(surahNum, ayahNum, verseEl) {
+  const content = verseEl.querySelector('.verse-inline-content');
+  if (!content) return;
+
+  // إذا كان مفتوحاً — أغلق
+  if (content.dataset.mode === 'tafsir' && !content.classList.contains('hidden')) {
+    content.innerHTML = '';
+    content.dataset.mode = '';
+    return;
+  }
+
+  content.dataset.mode = 'tafsir';
+  content.innerHTML = '<div class="inline-loading">⏳ جاري تحميل التفسير...</div>';
+
+  if (!window.TafsirModule) {
+    content.innerHTML = '<div class="inline-error">وحدة التفاسير غير محمّلة.</div>';
+    return;
+  }
+
+  try {
+    const tafsirs = await TafsirModule.available();
+    const downloaded = tafsirs.filter(t => t.downloaded);
+
+    if (!downloaded.length) {
+      content.innerHTML = '<div class="inline-error">لم يتم تحميل أي تفسير بعد.</div>';
+      return;
+    }
+
+    let html = '<div class="inline-tabs">';
+    downloaded.forEach((t, i) => {
+      html += `<button class="inline-tab ${i===0?'active':''}" 
+                data-tafsir="${t.id}">${t.name}</button>`;
+    });
+    html += '</div><div class="inline-body" id="inline-body-' + surahNum + '-' + ayahNum + '">⏳ جاري التحميل...</div>';
+
+    content.innerHTML = html;
+
+    // ربط الأزرار
+    content.querySelectorAll('.inline-tab').forEach(tab => {
+      tab.onclick = () => {
+        content.querySelectorAll('.inline-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        loadTafsirInto(content, tab.dataset.tafsir, surahNum, ayahNum);
+      };
+    });
+
+    // حمّل الأول
+    loadTafsirInto(content, downloaded[0].id, surahNum, ayahNum);
+  } catch (e) {
+    content.innerHTML = '<div class="inline-error">خطأ: ' + e.message + '</div>';
+  }
 }
 
-function toggleVerseBookmark(s, a) {
+async function loadTafsirInto(content, tafsirId, surahNum, ayahNum) {
+  const body = content.querySelector('.inline-body');
+  if (!body) return;
+  body.innerHTML = '⏳ جاري التحميل...';
+
+  try {
+    const data = await TafsirModule.load(tafsirId);
+    const text = TafsirModule.getVerse(data, surahNum, ayahNum);
+    if (text) {
+      body.innerHTML = text.replace(/\n/g, '<br>');
+    } else {
+      body.innerHTML = '<em>لا يوجد تفسير لهذه الآية في هذا المصدر.</em>';
+    }
+  } catch (e) {
+    body.innerHTML = '<span style="color:#c00">خطأ: ' + e.message + '</span>';
+  }
+}
+
+// ==================== الترجمة المضمّنة ====================
+async function toggleInlineTranslation(surahNum, ayahNum, verseEl) {
+  const content = verseEl.querySelector('.verse-inline-content');
+  if (!content) return;
+
+  if (content.dataset.mode === 'translation' && !content.classList.contains('hidden')) {
+    content.innerHTML = '';
+    content.dataset.mode = '';
+    return;
+  }
+
+  content.dataset.mode = 'translation';
+  content.innerHTML = '<div class="inline-loading">⏳ جاري تحميل الترجمة...</div>';
+
+  if (!window.TranslationModule) {
+    content.innerHTML = '<div class="inline-error">وحدة الترجمة غير محمّلة.</div>';
+    return;
+  }
+
+  try {
+    const translations = await TranslationModule.available();
+    const downloaded = translations.filter(t => t.downloaded);
+
+    if (!downloaded.length) {
+      content.innerHTML = '<div class="inline-error">لم يتم تحميل أي ترجمة بعد.</div>';
+      return;
+    }
+
+    let html = '<div class="inline-tabs">';
+    downloaded.forEach((t, i) => {
+      html += `<button class="inline-tab ${i===0?'active':''}" 
+                data-lang="${t.lang}">${t.flag} ${t.name}</button>`;
+    });
+    html += '</div><div class="inline-body" dir="auto">⏳ جاري التحميل...</div>';
+
+    content.innerHTML = html;
+
+    content.querySelectorAll('.inline-tab').forEach(tab => {
+      tab.onclick = () => {
+        content.querySelectorAll('.inline-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        loadTranslationInto(content, tab.dataset.lang, surahNum, ayahNum);
+      };
+    });
+
+    loadTranslationInto(content, downloaded[0].lang, surahNum, ayahNum);
+  } catch (e) {
+    content.innerHTML = '<div class="inline-error">خطأ: ' + e.message + '</div>';
+  }
+}
+
+async function loadTranslationInto(content, lang, surahNum, ayahNum) {
+  const body = content.querySelector('.inline-body');
+  if (!body) return;
+  body.innerHTML = '⏳ جاري التحميل...';
+
+  try {
+    const data = await TranslationModule.load(lang);
+    const text = TranslationModule.getVerse(data, surahNum, ayahNum);
+    if (text) {
+      const isRTL = ['ar', 'ber'].includes(lang);
+      body.setAttribute('dir', isRTL ? 'rtl' : 'ltr');
+      body.innerHTML = text;
+    } else {
+      body.innerHTML = '<em>لا توجد ترجمة لهذه الآية.</em>';
+    }
+  } catch (e) {
+    body.innerHTML = '<span style="color:#c00">خطأ: ' + e.message + '</span>';
+  }
+}
+
+// ==================== العلامات والملاحظات المضمّنة ====================
+function toggleVerseBookmarkInline(s, a, verseEl) {
   const id = s + ':' + a;
   const idx = state.bookmarks.indexOf(id);
   if (idx >= 0) state.bookmarks.splice(idx, 1);
   else state.bookmarks.push(id);
   DB.saveUserData('bookmarks', state.bookmarks);
-  closeModal();
-  renderSurah(state.currentSurah);
+
+  const btn = verseEl.querySelector('.verse-inline-actions button[data-act="bookmark"]');
+  if (btn) {
+    btn.textContent = state.bookmarks.includes(id) ? '🔖 إزالة' : '🔖 علامة';
+  }
 }
 
-function isVerseBookmarked(s, a) {
-  return state.bookmarks.includes(s + ':' + a);
-}
-
-function openVerseNote(s, a) {
+function openVerseNoteInline(s, a, verseEl) {
   const id = s + ':' + a;
   const note = prompt('ملاحظتك على الآية:', state.notes[id] || '');
   if (note !== null) {
     state.notes[id] = note;
     DB.saveUserData('notes', state.notes);
-    closeModal();
+    const content = verseEl.querySelector('.verse-inline-content');
+    content.dataset.mode = 'note';
+    content.innerHTML = '<div class="inline-note"><strong>📝 ملاحظتك:</strong><br>' 
+                      + note.replace(/\n/g, '<br>') + '</div>';
   }
 }
 
-function markMemorized(s, a) {
-  const key = s + ':' + a;
-  state.progress[key] = { ...(state.progress[key] || {}), memorized: !state.progress[key]?.memorized };
-  DB.saveUserData('progress', state.progress);
-  closeModal();
-}
-
-function repeatVerse(s, a, times) {
-  if (window.Audio) {
-    Audio.setRepeat(times);
-    Audio.play(getAudioUrl(s));
-  }
-  closeModal();
-  const btn = document.getElementById('play-btn');
-  if (btn) btn.textContent = '⏸ إيقاف';
+function isVerseBookmarked(s, a) {
+  return state.bookmarks.includes(s + ':' + a);
 }
 
 // ==================== القائمة الجانبية ====================
@@ -341,23 +492,14 @@ window.addEventListener('audio-ended', () => {
   isPlaying = false;
 });
 
-// ==================== شريط الأدوات ====================
+// ==================== شريط الأدوات العلوي ====================
 function handleToolbar(action) {
-  const surah = state.data?.surahs?.[state.currentSurah - 1];
-  const totalAyahs = surah?.verses?.length || 1;
-  
-  if (action === 'tafseer') {
-    const a = prompt('رقم الآية (1 - ' + totalAyahs + '):', '1');
-    if (a && +a >= 1 && +a <= totalAyahs) showVerseTafsir(state.currentSurah, +a);
-  }
-  else if (action === 'translate') {
-    const a = prompt('رقم الآية (1 - ' + totalAyahs + '):', '1');
-    if (a && +a >= 1 && +a <= totalAyahs) showVerseTranslation(state.currentSurah, +a);
-  }
-  else if (action === 'tajweed')  showTajweedLegend();
-  else if (action === 'bookmark') showBookmarks();
-  else if (action === 'note')     openNote();
-  else if (action === 'settings') openSettingsNew();
+  if (action === 'tafseer')        openSearchModal();
+  else if (action === 'translate') openSearchModal();
+  else if (action === 'tajweed')   showTajweedLegend();
+  else if (action === 'bookmark')  showBookmarks();
+  else if (action === 'note')      openNote();
+  else if (action === 'settings')  openSettingsNew();
 }
 
 function showBookmarks() {
@@ -378,7 +520,11 @@ function goToVerse(s, a) {
   closeModal();
   setTimeout(() => {
     const el = document.querySelector(`.verse[data-ayah="${a}"]`);
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('active'); }
+    if (el) { 
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' }); 
+      el.classList.add('active');
+      setTimeout(() => el.classList.remove('active'), 2000);
+    }
   }, 300);
 }
 
@@ -408,18 +554,12 @@ function openSettingsNew() {
                onchange="setTajweed(this.checked)" style="width:20px;height:20px" />
         <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
       </div>
-      <label>العرض</label>
-      <select onchange="setViewMode(this.value)">
-        <option value="normal" ${state.viewMode==='normal'?'selected':''}>عادي</option>
-        <option value="focus" ${state.viewMode==='focus'?'selected':''}>وضع التركيز</option>
-      </select>
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
         <div>📊 <strong>إحصاءاتك:</strong></div>
         <div style="margin-top:.5rem">
           ✅ آيات محفوظة: ${Object.values(state.progress).filter(p=>p.memorized).length}<br>
           🔖 علامات: ${state.bookmarks.length}<br>
           📝 ملاحظات: ${Object.keys(state.notes).length}<br>
-          📖 آخر سورة: ${state.currentSurah}<br>
           🎨 التجويد: ${window.Tajweed && Tajweed.isEnabled() ? 'مفعّل' : 'معطّل'}
         </div>
       </div>
@@ -487,25 +627,28 @@ function openSearchModal() {
       return;
     }
 
-    const results = QuranSearch.query(q, 50);
+    const results = QuranSearch.query(q, 0);
 
     if (!results.length) {
       container.innerHTML = '<div class="no-results">لا توجد نتائج مطابقة</div>';
       return;
     }
 
-    container.innerHTML = `
-      <div class="results-count">عدد النتائج: ${results.length} آية</div>
-      ${results.map(r => `
-        <div class="search-result" onclick="goToVerse(${r.surahNum}, ${r.ayahNum})">
-          <div class="sr-header">
-            <span>${r.surahName}</span>
-            <span>آية ${r.ayahNum}</span>
-          </div>
-          <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
+    const limit = 200;
+    const shown = results.slice(0, limit);
+    let html = '<div class="results-count">عدد النتائج: <strong>' + results.length + '</strong> آية';
+    if (results.length > limit) html += ' (يتم عرض أول ' + limit + ')';
+    html += '</div>';
+    html += shown.map(r => `
+      <div class="search-result" onclick="goToVerse(${r.surahNum}, ${r.ayahNum})">
+        <div class="sr-header">
+          <span>${r.surahName}</span>
+          <span>آية ${r.ayahNum}</span>
         </div>
-      `).join('')}
-    `;
+        <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
+      </div>
+    `).join('');
+    container.innerHTML = html;
   }, 250);
 }
 
@@ -522,9 +665,6 @@ function showTajweedLegend() {
         </div>
       `).join('')}
     </div>
-    <p style="font-size:.9rem;color:var(--text-2);margin-bottom:1rem">
-      يتم تلوين أحكام التجويد تلقائياً في نص المصحف.
-    </p>
     <button onclick="toggleTajweedFromModal()"
             style="width:100%;padding:.75rem;background:var(--gold);color:var(--green);border:none;border-radius:8px;font-size:1rem;font-family:inherit;cursor:pointer;font-weight:bold">
       ${Tajweed.isEnabled() ? '⏸ تعطيل التلوين' : '▶ تفعيل التلوين'}
@@ -539,7 +679,6 @@ function toggleTajweedFromModal() {
   DB.saveUserData('tajweed', enabled);
   closeModal();
   renderSurah(state.currentSurah);
-  setTimeout(() => showTajweedLegend(), 200);
 }
 
 function updateReadingProgress() {
@@ -569,18 +708,26 @@ function closeModal() {
   if (m) m.classList.add('hidden');
 }
 
-// إتاحة الدوال للنقر المضمن
+// دعم التوافق الخلفي
+function showVerseActions() { /* لم يعد مستخدماً */ }
+function showVerseTafsir(s, a) {
+  const el = document.querySelector(`.verse[data-ayah="${a}"][data-surah="${s}"]`);
+  if (el) toggleInlineTafsir(s, a, el);
+}
+function showVerseTranslation(s, a) {
+  const el = document.querySelector(`.verse[data-ayah="${a}"][data-surah="${s}"]`);
+  if (el) toggleInlineTranslation(s, a, el);
+}
+
+// إتاحة الدوال العامة
 window.goToVerse = goToVerse;
-window.showVerseActions = showVerseActions;
-window.repeatVerse = repeatVerse;
-window.toggleVerseBookmark = toggleVerseBookmark;
-window.openVerseNote = openVerseNote;
-window.markMemorized = markMemorized;
-window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.setFontSize = setFontSize;
 window.setReader = setReader;
 window.setTajweed = setTajweed;
 window.setViewMode = setViewMode;
+window.toggleTajweedFromModal = toggleTajweedFromModal;
+window.showVerseTafsir = showVerseTafsir;
+window.showVerseTranslation = showVerseTranslation;
 
 // ==================== Service Worker ====================
 if ('serviceWorker' in navigator) {
