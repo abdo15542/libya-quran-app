@@ -1,10 +1,26 @@
+# Node modules
 node_modules/
+
+# Android
 android/.gradle/
 android/app/build/
 android/build/
 android/local.properties
 android/.idea/
 android/capacitor-cordova-android-plugins/
-android/app/src/main/assets/public/
+
+# ملفات مؤقتة
 *.log
 .DS_Store
+editions.json
+tafsir-log.txt
+trans-log.txt
+
+# البيانات غير المضغوطة — نحتفظ فقط بالنسخ .gz
+www/data/tafsir-*.json
+www/data/trans-*.json
+www/data/quran.json
+www/data/surahs.json
+
+# استثنِ جميع الملفات المضغوطة (نحتفظ بها)
+!www/data/*.json.gz

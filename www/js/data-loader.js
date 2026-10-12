@@ -1,8 +1,27 @@
 // ============ مسارات الملفات ============
 const DATA_PATHS = {
-  surahs: 'data/surahs.json',
-  quran:  'data/quran.json',
+  surahs: 'data/surahs.json.gz',
+  quran:  'data/quran.json.gz',
 };
+
+
+async function fetchAndDecompress(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  if (url.endsWith('.gz')) {
+    if (typeof DecompressionStream !== 'undefined') {
+      const ds = new DecompressionStream('gzip');
+      const stream = res.body.pipeThrough(ds);
+      return JSON.parse(await new Response(stream).text());
+    }
+    if (typeof pako !== 'undefined') {
+      const buffer = await res.arrayBuffer();
+      return JSON.parse(pako.ungzip(new Uint8Array(buffer), { to: 'string' }));
+    }
+    throw new Error('فك الضغط غير مدعوم');
+  }
+  return await res.json();
+}
 
 let _surahsCache = null;
 let _quranCache = null;
@@ -11,8 +30,7 @@ let _quranCache = null;
 async function loadSurahsMeta() {
   if (_surahsCache) return _surahsCache;
   try {
-    const res = await fetch(DATA_PATHS.surahs);
-    _surahsCache = await res.json();
+    _surahsCache = await fetchAndDecompress(DATA_PATHS.surahs);
   } catch (e) {
     console.warn('فهرس السور:', e.message);
     _surahsCache = [];
