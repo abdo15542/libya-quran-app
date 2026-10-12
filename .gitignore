@@ -6,6 +6,5 @@ android/local.properties
 android/.idea/
 android/capacitor-cordova-android-plugins/
 android/app/src/main/assets/public/
-www/.cache/
 *.log
 .DS_Store
