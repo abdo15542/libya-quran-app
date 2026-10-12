@@ -343,11 +343,21 @@ window.addEventListener('audio-ended', () => {
 
 // ==================== شريط الأدوات ====================
 function handleToolbar(action) {
-  if (action === 'tafseer')        showTajweedLegend();
-  else if (action === 'bookmark')  showBookmarks();
-  else if (action === 'note')      openNote();
-  else if (action === 'translate') openSearchModal();
-  else if (action === 'settings')  openSettingsNew();
+  const surah = state.data?.surahs?.[state.currentSurah - 1];
+  const totalAyahs = surah?.verses?.length || 1;
+  
+  if (action === 'tafseer') {
+    const a = prompt('رقم الآية (1 - ' + totalAyahs + '):', '1');
+    if (a && +a >= 1 && +a <= totalAyahs) showVerseTafsir(state.currentSurah, +a);
+  }
+  else if (action === 'translate') {
+    const a = prompt('رقم الآية (1 - ' + totalAyahs + '):', '1');
+    if (a && +a >= 1 && +a <= totalAyahs) showVerseTranslation(state.currentSurah, +a);
+  }
+  else if (action === 'tajweed')  showTajweedLegend();
+  else if (action === 'bookmark') showBookmarks();
+  else if (action === 'note')     openNote();
+  else if (action === 'settings') openSettingsNew();
 }
 
 function showBookmarks() {
