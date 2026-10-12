@@ -1,4 +1,4 @@
-// ============ وحدة التفاسير — تحميل عبر <script> ============
+// ============ وحدة التفاسير — مع إصلاح loadScript ============
 
 const TAFSIR_SOURCES = {
   muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', script: 'tafsir-muyassar' },
@@ -10,26 +10,39 @@ const TAFSIR_SOURCES = {
 };
 
 let _cache = {};
+const _scriptState = {}; // 'pending' | 'ok' | 'error'
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector('script[data-qd="' + src + '"]')) {
-      return resolve();
+    if (_scriptState[src] === 'ok') return resolve();
+    if (_scriptState[src] === 'pending') {
+      // انتظر حتى ينتهي
+      const t = setInterval(() => {
+        if (_scriptState[src] === 'ok') { clearInterval(t); resolve(); }
+        else if (_scriptState[src] === 'error') { clearInterval(t); reject(new Error('فشل سابق')); }
+      }, 100);
+      setTimeout(() => { clearInterval(t); reject(new Error('مهلة')); }, 30000);
+      return;
     }
+
+    _scriptState[src] = 'pending';
     const s = document.createElement('script');
     s.src = src;
-    s.setAttribute('data-qd', src);
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('فشل تحميل: ' + src));
+    s.onload = () => { _scriptState[src] = 'ok'; resolve(); };
+    s.onerror = () => {
+      _scriptState[src] = 'error';
+      // احذف الوسم الفاشل
+      if (s.parentNode) s.parentNode.removeChild(s);
+      reject(new Error('فشل تحميل: ' + src));
+    };
     document.head.appendChild(s);
   });
 }
 
 function base64ToUint8(b64) {
   const bin = atob(b64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
 
@@ -37,48 +50,44 @@ async function loadTafsir(tafsirId) {
   if (!TAFSIR_SOURCES[tafsirId]) throw new Error('تفسير غير معروف');
   if (_cache[tafsirId]) return _cache[tafsirId];
 
-  // 1. IndexedDB
   try {
     const cached = await DB.dbGet('tafsir', tafsirId);
     if (cached && cached.surahs && cached.surahs.length > 0) {
       _cache[tafsirId] = cached;
       return cached;
     }
-  } catch (e) { /* تجاهل */ }
+  } catch (e) {}
 
-  // 2. حمّل السكربت
   const baseName = TAFSIR_SOURCES[tafsirId].script;
   const scriptPath = 'data/' + baseName + '.js';
 
+  // حمّل السكربت
   if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
+    console.log('📖 تحميل سكربت:', scriptPath);
     await loadScript(scriptPath);
+    console.log('✓ تم تحميل السكربت');
   }
 
   const b64 = window.QURAN_DATA && window.QURAN_DATA[baseName];
-  if (!b64) throw new Error('البيانات مفقودة: ' + baseName);
+  if (!b64) {
+    throw new Error('البيانات مفقودة: ' + baseName + ' (حجم: ' + (window.QURAN_DATA ? Object.keys(window.QURAN_DATA) : 'undefined') + ')');
+  }
 
-  // فك الترميز والضغط
+  console.log('📦 حجم base64:', (b64.length / 1024).toFixed(1), 'KB');
+
   const gzBytes = base64ToUint8(b64);
   let jsonStr;
   if (typeof pako !== 'undefined') {
     jsonStr = pako.ungzip(gzBytes, { to: 'string' });
-  } else if (typeof DecompressionStream !== 'undefined') {
-    const ds = new DecompressionStream('gzip');
-    const blob = new Blob([gzBytes]);
-    const stream = blob.stream().pipeThrough(ds);
-    jsonStr = await new Response(stream).text();
   } else {
-    throw new Error('فك الضغط غير مدعوم');
+    throw new Error('pako غير محمّل');
   }
 
   const data = JSON.parse(jsonStr);
   if (!data.surahs || !data.surahs.length) throw new Error('الملف فارغ');
 
-  // حرّر الذاكرة
   try { delete window.QURAN_DATA[baseName]; } catch (e) {}
-
-  // احفظ في IndexedDB
-  try { await DB.dbPut('tafsir', tafsirId, data); } catch (e) { /* تجاهل */ }
+  try { await DB.dbPut('tafsir', tafsirId, data); } catch (e) {}
   _cache[tafsirId] = data;
   return data;
 }

@@ -1,4 +1,4 @@
-// ============ وحدة الترجمات — تحميل عبر <script> ============
+// ============ وحدة الترجمات — مع إصلاح loadScript ============
 
 const TRANSLATION_SOURCES = {
   en:  { name: 'English',   flag: '🇬🇧', script: 'trans-en' },
@@ -12,24 +12,36 @@ const TRANSLATION_SOURCES = {
 };
 
 let _transCache = {};
+const _tScriptState = {};
 
-function loadScript(src) {
+function tLoadScript(src) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector('script[data-qd="' + src + '"]')) return resolve();
+    if (_tScriptState[src] === 'ok') return resolve();
+    if (_tScriptState[src] === 'pending') {
+      const t = setInterval(() => {
+        if (_tScriptState[src] === 'ok') { clearInterval(t); resolve(); }
+        else if (_tScriptState[src] === 'error') { clearInterval(t); reject(new Error('فشل سابق')); }
+      }, 100);
+      setTimeout(() => { clearInterval(t); reject(new Error('مهلة')); }, 30000);
+      return;
+    }
+    _tScriptState[src] = 'pending';
     const s = document.createElement('script');
     s.src = src;
-    s.setAttribute('data-qd', src);
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('فشل تحميل: ' + src));
+    s.onload = () => { _tScriptState[src] = 'ok'; resolve(); };
+    s.onerror = () => {
+      _tScriptState[src] = 'error';
+      if (s.parentNode) s.parentNode.removeChild(s);
+      reject(new Error('فشل تحميل: ' + src));
+    };
     document.head.appendChild(s);
   });
 }
 
-function base64ToUint8(b64) {
+function tBase64ToUint8(b64) {
   const bin = atob(b64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
 
@@ -43,24 +55,26 @@ async function loadTranslation(lang) {
       _transCache[lang] = cached;
       return cached;
     }
-  } catch (e) { /* تجاهل */ }
+  } catch (e) {}
 
   const baseName = TRANSLATION_SOURCES[lang].script;
   const scriptPath = 'data/' + baseName + '.js';
 
   if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
-    await loadScript(scriptPath);
+    console.log('🌐 تحميل سكربت:', scriptPath);
+    await tLoadScript(scriptPath);
+    console.log('✓ تم تحميل السكربت');
   }
 
   const b64 = window.QURAN_DATA && window.QURAN_DATA[baseName];
   if (!b64) throw new Error('البيانات مفقودة: ' + baseName);
 
-  const gzBytes = base64ToUint8(b64);
+  const gzBytes = tBase64ToUint8(b64);
   let jsonStr;
   if (typeof pako !== 'undefined') {
     jsonStr = pako.ungzip(gzBytes, { to: 'string' });
   } else {
-    throw new Error('pako مطلوب');
+    throw new Error('pako غير محمّل');
   }
 
   const data = JSON.parse(jsonStr);
