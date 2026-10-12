@@ -32,6 +32,17 @@ jobs:
       - name: Accept Android SDK Licenses
         run: yes | sdkmanager --licenses || true
 
+      # ========== إضافة ذاكرة تخزين مؤقت لـ Gradle ==========
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
@@ -41,12 +52,23 @@ jobs:
       - name: Grant execute permission
         run: chmod +x android/gradlew
 
+      - name: Verify web assets
+        run: |
+          echo "=== www/ ==="
+          ls -la www/
+          echo "=== www/js/ ==="
+          ls -la www/js/
+          echo "=== www/data/ ==="
+          ls -la www/data/ || echo "لا يوجد مجلد data"
+
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -300
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: libya-quran-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
