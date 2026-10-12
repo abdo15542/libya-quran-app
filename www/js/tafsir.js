@@ -10,26 +10,19 @@ const TAFSIR_SOURCES = {
 };
 
 let _cache = {};
-let _currentId = null;
 
-// فك ضغط gzip في المتصفح
 async function decompressGzip(response) {
   const buffer = await response.arrayBuffer();
-
-  // pako أولاً (الأكثر توافقاً مع WebView)
   if (typeof pako !== 'undefined') {
-    const inflated = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-    return JSON.parse(inflated);
+    const text = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+    return JSON.parse(text);
   }
-
-  // DecompressionStream كاحتياطي
   if (typeof DecompressionStream !== 'undefined') {
     const ds = new DecompressionStream('gzip');
     const blob = new Blob([buffer]);
     const stream = blob.stream().pipeThrough(ds);
     return JSON.parse(await new Response(stream).text());
   }
-
   throw new Error('فك الضغط غير مدعوم');
 }
 
@@ -37,62 +30,53 @@ async function loadTafsir(tafsirId) {
   if (!TAFSIR_SOURCES[tafsirId]) throw new Error('تفسير غير معروف: ' + tafsirId);
   if (_cache[tafsirId]) return _cache[tafsirId];
 
-  // 1. IndexedDB
-  const cached = await DB.dbGet('tafsir', tafsirId);
-  if (cached && cached.surahs && cached.surahs.length > 0) {
-    _cache[tafsirId] = cached;
-    _currentId = tafsirId;
-    return cached;
-  }
-
-  // 2. من ملف gzip المحلي
+  // 1. جرّب IndexedDB
   try {
-    const url = 'data/' + TAFSIR_SOURCES[tafsirId].file;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-
-    const data = await decompressGzip(res);
-    await DB.dbPut('tafsir', tafsirId, data);
-    _cache[tafsirId] = data;
-    _currentId = tafsirId;
-    return data;
+    const cached = await DB.dbGet('tafsir', tafsirId);
+    if (cached && cached.surahs && cached.surahs.length > 0) {
+      _cache[tafsirId] = cached;
+      return cached;
+    }
   } catch (e) {
-    console.warn('فشل تحميل التفسير:', e.message);
-    throw new Error('لم يتم العثور على التفسير: ' + tafsirId);
+    console.warn('DB read:', e.message);
   }
+
+  // 2. حمّل من الملف
+  const url = 'data/' + TAFSIR_SOURCES[tafsirId].file;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + url);
+  const data = await decompressGzip(res);
+
+  if (!data.surahs || data.surahs.length === 0) {
+    throw new Error('ملف التفسير فارغ');
+  }
+
+  // احفظ في IndexedDB
+  try {
+    await DB.dbPut('tafsir', tafsirId, data);
+  } catch (e) {
+    console.warn('DB write:', e.message);
+  }
+
+  _cache[tafsirId] = data;
+  return data;
 }
 
 function getVerseTafsir(tafsirData, surahNum, ayahNum) {
   if (!tafsirData || !tafsirData.surahs) return null;
   const surah = tafsirData.surahs.find(s => s.number === surahNum);
   if (!surah || !surah.verses) return null;
-
   const entry = surah.verses.find(v => (v.ayah || v.number) === ayahNum);
   return entry ? (entry.text || entry.tafsir || '') : null;
 }
 
+// ✅ إرجاع كل التفاسير كما هي (بدون فحص HEAD الذي لا يعمل في WebView)
 async function getAvailableTafsirs() {
-  const available = [];
-  for (const [id, info] of Object.entries(TAFSIR_SOURCES)) {
-    // تحقق من IndexedDB أولاً
-    const cached = await DB.dbGet('tafsir', id);
-    let available_flag = false;
-
-    if (cached && cached.surahs && cached.surahs.length > 0) {
-      available_flag = true;
-    } else {
-      // تحقق من وجود الملف
-      try {
-        const res = await fetch('data/' + info.file, { method: 'HEAD' });
-        available_flag = res.ok;
-      } catch (e) {
-        available_flag = false;
-      }
-    }
-
-    available.push({ id, name: info.name, downloaded: available_flag });
-  }
-  return available;
+  return Object.entries(TAFSIR_SOURCES).map(([id, info]) => ({
+    id,
+    name: info.name,
+    downloaded: true,   // ← نجرب تحميل الكل، والفشل سيظهر عند المحاولة
+  }));
 }
 
 window.TafsirModule = {

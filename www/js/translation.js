@@ -16,8 +16,8 @@ let _transCache = {};
 async function decompressGzip(response) {
   const buffer = await response.arrayBuffer();
   if (typeof pako !== 'undefined') {
-    const inflated = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-    return JSON.parse(inflated);
+    const text = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+    return JSON.parse(text);
   }
   if (typeof DecompressionStream !== 'undefined') {
     const ds = new DecompressionStream('gzip');
@@ -33,26 +33,35 @@ async function loadTranslation(lang) {
   if (_transCache[lang]) return _transCache[lang];
 
   // 1. IndexedDB
-  const cached = await DB.dbGet('translations', lang);
-  if (cached && cached.verses && cached.verses.length > 0) {
-    _transCache[lang] = cached;
-    return cached;
-  }
-
-  // 2. من ملف gzip محلي
   try {
-    const url = 'data/' + TRANSLATION_SOURCES[lang].file;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-
-    const data = await decompressGzip(res);
-    await DB.dbPut('translations', lang, data);
-    _transCache[lang] = data;
-    return data;
+    const cached = await DB.dbGet('translations', lang);
+    if (cached && cached.verses && cached.verses.length > 0) {
+      _transCache[lang] = cached;
+      return cached;
+    }
   } catch (e) {
-    console.warn('فشل تحميل الترجمة:', e.message);
-    throw new Error('لم يتم العثور على الترجمة: ' + lang);
+    console.warn('DB read:', e.message);
   }
+
+  // 2. حمّل من الملف
+  const url = 'data/' + TRANSLATION_SOURCES[lang].file;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + url);
+  const data = await decompressGzip(res);
+
+  if (!data.verses || data.verses.length === 0) {
+    throw new Error('ملف الترجمة فارغ');
+  }
+
+  // احفظ
+  try {
+    await DB.dbPut('translations', lang, data);
+  } catch (e) {
+    console.warn('DB write:', e.message);
+  }
+
+  _transCache[lang] = data;
+  return data;
 }
 
 function getVerseTranslation(data, surahNum, ayahNum) {
@@ -64,28 +73,14 @@ function getVerseTranslation(data, surahNum, ayahNum) {
   return entry ? (entry.text || '') : null;
 }
 
+// ✅ إرجاع كل الترجمات كما هي (بدون فحص HEAD)
 async function getAvailableTranslations() {
-  const available = [];
-  for (const [lang, info] of Object.entries(TRANSLATION_SOURCES)) {
-    const cached = await DB.dbGet('translations', lang);
-    let hasFile = false;
-
-    if (cached && cached.verses && cached.verses.length > 0) {
-      hasFile = true;
-    } else {
-      try {
-        const res = await fetch('data/' + info.file, { method: 'HEAD' });
-        hasFile = res.ok;
-      } catch (e) {
-        hasFile = false;
-      }
-    }
-
-    available.push({ 
-      lang, name: info.name, flag: info.flag, downloaded: hasFile 
-    });
-  }
-  return available;
+  return Object.entries(TRANSLATION_SOURCES).map(([lang, info]) => ({
+    lang,
+    name: info.name,
+    flag: info.flag,
+    downloaded: true,
+  }));
 }
 
 window.TranslationModule = {
