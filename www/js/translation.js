@@ -1,14 +1,14 @@
-// ============ وحدة الترجمات مع دعم gzip ============
+// ============ وحدة الترجمات ============
 
 const TRANSLATION_SOURCES = {
-  en:  { name: 'English',   flag: '🇬🇧', file: 'trans-en.json.gz' },
-  fr:  { name: 'Français',  flag: '🇫🇷', file: 'trans-fr.json.gz' },
-  it:  { name: 'Italiano',  flag: '🇮🇹', file: 'trans-it.json.gz' },
-  ber: { name: 'ⴰⵎⴰⵣⵉⵖ',    flag: '🇱🇾', file: 'trans-ber.json.gz' },
-  es:  { name: 'Español',   flag: '🇪🇸', file: 'trans-es.json.gz' },
-  de:  { name: 'Deutsch',   flag: '🇩🇪', file: 'trans-de.json.gz' },
-  ru:  { name: 'Русский',   flag: '🇷🇺', file: 'trans-ru.json.gz' },
-  tr:  { name: 'Türkçe',    flag: '🇹🇷', file: 'trans-tr.json.gz' },
+  en:  { name: 'English',   flag: '🇬🇧', file: 'trans-en.txt.gz' },
+  fr:  { name: 'Français',  flag: '🇫🇷', file: 'trans-fr.txt.gz' },
+  it:  { name: 'Italiano',  flag: '🇮🇹', file: 'trans-it.txt.gz' },
+  ber: { name: 'ⴰⵎⴰⵣⵉⵖ',    flag: '🇱🇾', file: 'trans-ber.txt.gz' },
+  es:  { name: 'Español',   flag: '🇪🇸', file: 'trans-es.txt.gz' },
+  de:  { name: 'Deutsch',   flag: '🇩🇪', file: 'trans-de.txt.gz' },
+  ru:  { name: 'Русский',   flag: '🇷🇺', file: 'trans-ru.txt.gz' },
+  tr:  { name: 'Türkçe',    flag: '🇹🇷', file: 'trans-tr.txt.gz' },
 };
 
 let _transCache = {};
@@ -16,8 +16,7 @@ let _transCache = {};
 async function decompressGzip(response) {
   const buffer = await response.arrayBuffer();
   if (typeof pako !== 'undefined') {
-    const text = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-    return JSON.parse(text);
+    return JSON.parse(pako.ungzip(new Uint8Array(buffer), { to: 'string' }));
   }
   if (typeof DecompressionStream !== 'undefined') {
     const ds = new DecompressionStream('gzip');
@@ -29,37 +28,26 @@ async function decompressGzip(response) {
 }
 
 async function loadTranslation(lang) {
-  if (!TRANSLATION_SOURCES[lang]) throw new Error('لغة غير معروفة: ' + lang);
+  if (!TRANSLATION_SOURCES[lang]) throw new Error('لغة غير معروفة');
   if (_transCache[lang]) return _transCache[lang];
 
-  // 1. IndexedDB
   try {
     const cached = await DB.dbGet('translations', lang);
     if (cached && cached.verses && cached.verses.length > 0) {
       _transCache[lang] = cached;
       return cached;
     }
-  } catch (e) {
-    console.warn('DB read:', e.message);
-  }
+  } catch (e) { /* تجاهل */ }
 
-  // 2. حمّل من الملف
   const url = 'data/' + TRANSLATION_SOURCES[lang].file;
+  console.log('🌐 تحميل:', url);
   const res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+
   const data = await decompressGzip(res);
+  if (!data.verses || data.verses.length === 0) throw new Error('الملف فارغ');
 
-  if (!data.verses || data.verses.length === 0) {
-    throw new Error('ملف الترجمة فارغ');
-  }
-
-  // احفظ
-  try {
-    await DB.dbPut('translations', lang, data);
-  } catch (e) {
-    console.warn('DB write:', e.message);
-  }
-
+  try { await DB.dbPut('translations', lang, data); } catch (e) { /* تجاهل */ }
   _transCache[lang] = data;
   return data;
 }
@@ -73,13 +61,9 @@ function getVerseTranslation(data, surahNum, ayahNum) {
   return entry ? (entry.text || '') : null;
 }
 
-// ✅ إرجاع كل الترجمات كما هي (بدون فحص HEAD)
 async function getAvailableTranslations() {
   return Object.entries(TRANSLATION_SOURCES).map(([lang, info]) => ({
-    lang,
-    name: info.name,
-    flag: info.flag,
-    downloaded: true,
+    lang, name: info.name, flag: info.flag, downloaded: true,
   }));
 }
 

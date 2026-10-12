@@ -17,14 +17,14 @@ editions.json
 tafsir-log.txt
 trans-log.txt
 
-# التفاسير والترجمات غير المضغوطة (نحتفظ فقط بـ .gz)
+# الملفات غير المضغوطة (نحتفظ فقط بـ .txt.gz)
 www/data/tafsir-*.json
+www/data/tafsir-*.json.gz
 www/data/trans-*.json
-
-# منع الملفات المكررة (المشكلة الأخيرة!)
+www/data/trans-*.json.gz
 www/data/quran.json.gz
 www/data/surahs.json.gz
 
 # نُبقي:
-# - quran.json و surahs.json (أساسية، غير مضغوطة)
-# - كل ملفات التفاسير والترجمات المضغوطة (.gz)
+# - quran.json و surahs.json
+# - كل ملفات .txt.gz

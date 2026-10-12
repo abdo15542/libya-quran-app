@@ -1,12 +1,12 @@
-// ============ وحدة التفاسير مع دعم gzip ============
+// ============ وحدة التفاسير ============
 
 const TAFSIR_SOURCES = {
-  muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', file: 'tafsir-muyassar.json.gz' },
-  'ibn-kathir': { id: 'ibn-kathir',   name: 'تفسير ابن كثير', file: 'tafsir-ibn-kathir.json.gz' },
-  jalalayn:     { id: 'jalalayn',     name: 'تفسير الجلالين', file: 'tafsir-jalalayn.json.gz' },
-  saadi:        { id: 'saadi',        name: 'تفسير السعدي',   file: 'tafsir-saadi.json.gz' },
-  tabari:       { id: 'tabari',       name: 'تفسير الطبري',   file: 'tafsir-tabari.json.gz' },
-  qurtubi:      { id: 'qurtubi',      name: 'تفسير القرطبي',  file: 'tafsir-qurtubi.json.gz' },
+  muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', file: 'tafsir-muyassar.txt.gz' },
+  'ibn-kathir': { id: 'ibn-kathir',   name: 'تفسير ابن كثير', file: 'tafsir-ibn-kathir.txt.gz' },
+  jalalayn:     { id: 'jalalayn',     name: 'تفسير الجلالين', file: 'tafsir-jalalayn.txt.gz' },
+  saadi:        { id: 'saadi',        name: 'تفسير السعدي',   file: 'tafsir-saadi.txt.gz' },
+  tabari:       { id: 'tabari',       name: 'تفسير الطبري',   file: 'tafsir-tabari.txt.gz' },
+  qurtubi:      { id: 'qurtubi',      name: 'تفسير القرطبي',  file: 'tafsir-qurtubi.txt.gz' },
 };
 
 let _cache = {};
@@ -27,37 +27,31 @@ async function decompressGzip(response) {
 }
 
 async function loadTafsir(tafsirId) {
-  if (!TAFSIR_SOURCES[tafsirId]) throw new Error('تفسير غير معروف: ' + tafsirId);
+  if (!TAFSIR_SOURCES[tafsirId]) throw new Error('تفسير غير معروف');
   if (_cache[tafsirId]) return _cache[tafsirId];
 
-  // 1. جرّب IndexedDB
+  // 1. IndexedDB
   try {
     const cached = await DB.dbGet('tafsir', tafsirId);
     if (cached && cached.surahs && cached.surahs.length > 0) {
       _cache[tafsirId] = cached;
       return cached;
     }
-  } catch (e) {
-    console.warn('DB read:', e.message);
-  }
+  } catch (e) { /* تجاهل */ }
 
-  // 2. حمّل من الملف
+  // 2. حمّل الملف
   const url = 'data/' + TAFSIR_SOURCES[tafsirId].file;
+  console.log('📖 تحميل:', url);
   const res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + url);
+  console.log('استجابة:', res.status);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+
   const data = await decompressGzip(res);
-
   if (!data.surahs || data.surahs.length === 0) {
-    throw new Error('ملف التفسير فارغ');
+    throw new Error('الملف فارغ');
   }
 
-  // احفظ في IndexedDB
-  try {
-    await DB.dbPut('tafsir', tafsirId, data);
-  } catch (e) {
-    console.warn('DB write:', e.message);
-  }
-
+  try { await DB.dbPut('tafsir', tafsirId, data); } catch (e) { /* تجاهل */ }
   _cache[tafsirId] = data;
   return data;
 }
@@ -70,12 +64,9 @@ function getVerseTafsir(tafsirData, surahNum, ayahNum) {
   return entry ? (entry.text || entry.tafsir || '') : null;
 }
 
-// ✅ إرجاع كل التفاسير كما هي (بدون فحص HEAD الذي لا يعمل في WebView)
 async function getAvailableTafsirs() {
   return Object.entries(TAFSIR_SOURCES).map(([id, info]) => ({
-    id,
-    name: info.name,
-    downloaded: true,   // ← نجرب تحميل الكل، والفشل سيظهر عند المحاولة
+    id, name: info.name, downloaded: true,
   }));
 }
 
