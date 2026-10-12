@@ -1,7 +1,7 @@
 # Node modules
 node_modules/
 
-# Android
+# Android build artifacts
 android/.gradle/
 android/app/build/
 android/build/
@@ -16,11 +16,11 @@ editions.json
 tafsir-log.txt
 trans-log.txt
 
-# البيانات غير المضغوطة — نحتفظ فقط بالنسخ .gz
+# التفاسير والترجمات (نحتفظ فقط بالنسخ المضغوطة .gz)
 www/data/tafsir-*.json
 www/data/trans-*.json
-www/data/quran.json
-www/data/surahs.json
 
-# استثنِ جميع الملفات المضغوطة (نحتفظ بها)
+# نُبقي النسخ المضغوطة والملفات الأساسية
+!www/data/quran.json
+!www/data/surahs.json
 !www/data/*.json.gz

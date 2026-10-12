@@ -14,22 +14,23 @@ let _currentId = null;
 
 // فك ضغط gzip في المتصفح
 async function decompressGzip(response) {
-  // الطريقة 1: DecompressionStream (المتصفحات الحديثة)
-  if (typeof DecompressionStream !== 'undefined') {
-    const ds = new DecompressionStream('gzip');
-    const decompressedStream = response.body.pipeThrough(ds);
-    const text = await new Response(decompressedStream).text();
-    return JSON.parse(text);
-  }
+  const buffer = await response.arrayBuffer();
 
-  // الطريقة 2: fallback — pako (إذا كان محمّلاً)
+  // pako أولاً (الأكثر توافقاً مع WebView)
   if (typeof pako !== 'undefined') {
-    const buffer = await response.arrayBuffer();
     const inflated = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
     return JSON.parse(inflated);
   }
 
-  throw new Error('فك الضغط غير مدعوم في هذا المتصفح');
+  // DecompressionStream كاحتياطي
+  if (typeof DecompressionStream !== 'undefined') {
+    const ds = new DecompressionStream('gzip');
+    const blob = new Blob([buffer]);
+    const stream = blob.stream().pipeThrough(ds);
+    return JSON.parse(await new Response(stream).text());
+  }
+
+  throw new Error('فك الضغط غير مدعوم');
 }
 
 async function loadTafsir(tafsirId) {
