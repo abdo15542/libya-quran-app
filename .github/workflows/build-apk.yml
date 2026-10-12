@@ -32,7 +32,6 @@ jobs:
       - name: Accept Android SDK Licenses
         run: yes | sdkmanager --licenses || true
 
-      # ========== إضافة ذاكرة تخزين مؤقت لـ Gradle ==========
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -52,18 +51,31 @@ jobs:
       - name: Grant execute permission
         run: chmod +x android/gradlew
 
-      - name: Verify web assets
+      - name: Verify web assets copied
         run: |
           echo "=== www/ ==="
           ls -la www/
-          echo "=== www/js/ ==="
-          ls -la www/js/
           echo "=== www/data/ ==="
-          ls -la www/data/ || echo "لا يوجد مجلد data"
+          ls -la www/data/
+          echo "=== android assets (المصدر الرئيسي للـ APK) ==="
+          ls -la android/app/src/main/assets/public/ || echo "المجلد غير موجود!"
+          echo "=== android assets/data ==="
+          ls -la android/app/src/main/assets/public/data/ || echo "مجلد data غير موجود!"
+          echo "=== الحجم الإجمالي للأصول ==="
+          du -sh android/app/src/main/assets/public/ || echo "غير موجود"
 
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -300
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -500
+
+      - name: Verify APK exists
+        run: |
+          echo "=== البحث عن APK ==="
+          find android -name "*.apk" -type f
+          ls -la android/app/build/outputs/apk/debug/ 2>/dev/null || echo "مجلد APK غير موجود"
+          ls -la android/app/build/ 2>/dev/null || echo "مجلد build غير موجود"
 
       - name: Upload APK
         if: success()
@@ -72,3 +84,13 @@ jobs:
           name: libya-quran-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Upload Build Reports on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            android/app/build/reports/
+            android/build/reports/
+          if-no-files-found: ignore
