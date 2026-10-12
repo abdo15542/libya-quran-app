@@ -144,8 +144,8 @@ function renderSurah(num) {
   const container = document.getElementById('verses-container');
   container.innerHTML = '';
 
-  // البسملة (عدا الفاتحة والتوبة)
-  if (num !== 1 && num !== 9) {
+  // البسملة (عدا التوبة — استثناء شرعي)
+  if (num !== 9) {
     const bs = document.createElement('div');
     bs.className = 'bismillah';
     bs.textContent = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';

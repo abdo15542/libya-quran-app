@@ -1,138 +1,169 @@
-// تحميل بيانات المصحف من الملفات المحلية أو من الإنترنت
+// ============ مسارات الملفات ============
 const DATA_PATHS = {
   surahs: 'data/surahs.json',
   quran:  'data/quran.json',
 };
 
 let _surahsCache = null;
+let _quranCache = null;
 
+// ============ تحميل فهرس السور ============
 async function loadSurahsMeta() {
   if (_surahsCache) return _surahsCache;
   try {
     const res = await fetch(DATA_PATHS.surahs);
     _surahsCache = await res.json();
   } catch (e) {
+    console.warn('فهرس السور:', e.message);
     _surahsCache = [];
   }
   return _surahsCache;
 }
 
+// ============ تحميل المصحف الكامل ============
 async function loadFullQuran(onProgress = () => {}) {
-  // 1. جرّب IndexedDB أولاً
-  const cached = await DB.dbGet('quran', 'text');
-  if (cached && cached.surahs && cached.surahs.length > 10) return cached;
+  if (_quranCache) return _quranCache;
 
-  // 2. حمّل من الملف المحلي
+  // 1. IndexedDB
+  const cached = await DB.dbGet('quran', 'text');
+  if (cached && cached.surahs && cached.surahs.length >= 100) {
+    _quranCache = cached;
+    onProgress(1);
+    return cached;
+  }
+
+  // 2. الملف المحلي
   try {
+    onProgress(0.1);
     const res = await fetch(DATA_PATHS.quran);
     if (res.ok) {
+      onProgress(0.5);
       const raw = await res.json();
       const normalized = normalizeQuran(raw);
-      await DB.dbPut('quran', 'text', normalized);
-      return normalized;
+      if (normalized.surahs.length >= 100) {
+        await DB.dbPut('quran', 'text', normalized);
+        _quranCache = normalized;
+        onProgress(1);
+        return normalized;
+      } else {
+        console.warn('بنية غير متوقعة — عدد السور:', normalized.surahs.length);
+      }
     }
   } catch (e) {
-    console.warn('لم يوجد ملف quran.json محلي:', e.message);
+    console.warn('التحميل المحلي فشل:', e.message);
   }
 
-  // 3. جرّب التحميل من الإنترنت (مرة واحدة)
-  try {
-    const url = 'https://cdn.jsdelivr.net/gh/bwail/riwayat-quran-json@master/qaloon/quran.json';
-    const res = await fetch(url);
-    if (res.ok) {
-      const raw = await res.json();
-      const normalized = normalizeQuran(raw);
-      await DB.dbPut('quran', 'text', normalized);
-      return normalized;
-    }
-  } catch (e) {
-    console.warn('فشل التحميل من الإنترنت:', e.message);
-  }
-
-  // 4. احتياطي: النص المدمج
+  // 3. احتياطي
   const builtin = buildBuiltinQuran(await loadSurahsMeta());
-  await DB.dbPut('quran', 'text', builtin);
+  _quranCache = builtin;
   return builtin;
 }
 
-// توحيد بنية البيانات من مصادر مختلفة
+// ============ توحيد البنية (يعمل مع جميع المصادر) ============
 function normalizeQuran(raw) {
-  // الحالة 1: { surahs: [...] } جاهزة
-  if (raw.surahs && Array.isArray(raw.surahs)) {
-    return { surahs: raw.surahs.map((s, i) => ({
-      number: s.number || i + 1,
-      name: s.name || s.title || ('سورة ' + (i + 1)),
-      verses: (s.verses || s.ayahs || []).map((v, j) => ({
-        number: v.number || v.id || j + 1,
-        text: v.text || v.arab || '',
-      })),
-    }))};
-  }
+  console.log('normalizeQuran: تحليل البنية...');
 
-  // الحالة 2: مصفوفة مباشرة
-  if (Array.isArray(raw)) {
-    return { surahs: raw.map((s, i) => ({
-      number: i + 1,
-      name: s.name || s.title || ('سورة ' + (i + 1)),
-      verses: (s.verses || s.ayahs || []).map((v, j) => ({
-        number: v.number || j + 1,
-        text: typeof v === 'string' ? v : (v.text || ''),
-      })),
-    }))};
-  }
+  // استخرج المصفوفة الأساسية من أي بنية
+  const surahArray = extractSurahArray(raw);
+  console.log('normalizeQuran: عدد السور المكتشفة:', surahArray.length);
 
-  // الحالة 3: كائن مفاتيحه أرقام السور
-  if (typeof raw === 'object') {
-    const keys = Object.keys(raw).filter(k => /^\d+$/.test(k));
-    if (keys.length) {
-      return { surahs: keys.map(k => {
-        const s = raw[k];
-        return {
-          number: parseInt(k, 10),
-          name: s.name || s.title || ('سورة ' + k),
-          verses: (s.verses || s.ayahs || []).map((v, j) => ({
-            number: v.number || j + 1,
-            text: typeof v === 'string' ? v : (v.text || ''),
-          })),
-        };
-      })};
-    }
-  }
-
-  return { surahs: [] };
+  return { surahs: surahArray };
 }
 
-// بناء مصحف احتياطي من بيانات السور (نصوص فارغة، فقط للعرض)
+function extractSurahArray(raw) {
+  if (!raw) return [];
+
+  // الحالة 1: مصفوفة مباشرة
+  if (Array.isArray(raw)) {
+    return normalizeSurahList(raw);
+  }
+
+  // الحالة 2: Quranpedia أو مشابه — { data: ... }
+  if (raw.data) {
+    // 2أ: data مصفوفة
+    if (Array.isArray(raw.data)) {
+      return normalizeSurahList(raw.data);
+    }
+    // 2ب: data.surahs
+    if (raw.data.surahs && Array.isArray(raw.data.surahs)) {
+      return normalizeSurahList(raw.data.surahs);
+    }
+    // 2ج: data كائن بمفاتيح رقمية (1..114)
+    const keys = Object.keys(raw.data).filter(k => /^\d+$/.test(k));
+    if (keys.length >= 100) {
+      keys.sort((a, b) => +a - +b);
+      return keys.map(k => normalizeSurah(raw.data[k], parseInt(k, 10)));
+    }
+    // 2د: data.quran أو data.mushaf
+    if (raw.data.quran) return extractSurahArray(raw.data.quran);
+    if (raw.data.mushaf) return extractSurahArray(raw.data.mushaf);
+  }
+
+  // الحالة 3: { surahs: [...] }
+  if (raw.surahs && Array.isArray(raw.surahs)) {
+    return normalizeSurahList(raw.surahs);
+  }
+
+  // الحالة 4: مفاتيح رقمية في الجذر
+  const rootKeys = Object.keys(raw).filter(k => /^\d+$/.test(k));
+  if (rootKeys.length >= 100) {
+    rootKeys.sort((a, b) => +a - +b);
+    return rootKeys.map(k => normalizeSurah(raw[k], parseInt(k, 10)));
+  }
+
+  return [];
+}
+
+function normalizeSurahList(list) {
+  return list.map((s, i) => normalizeSurah(s, i + 1));
+}
+
+function normalizeSurah(s, defaultNum) {
+  if (!s) return emptySurah(defaultNum);
+
+  // ابحث عن قائمة الآيات في أي حقل محتمل
+  const verseList = s.verses || s.ayahs || s.ayat || s.versets || [];
+
+  let name = s.name || s.title || s.sura_name || s.arabic_name || s.surahName || ('سورة ' + defaultNum);
+  // إزالة بادئة "سورة " إن وُجدت لتجنب التكرار
+  name = String(name).replace(/^سورة\s+/, '').trim();
+  if (!name) name = 'سورة ' + defaultNum;
+
+  return {
+    number: s.number || s.n || s.id || s.sura || defaultNum,
+    name:   name,
+    verses: (verseList || []).map((v, j) => normalizeVerse(v, j + 1)),
+  };
+}
+
+function normalizeVerse(v, defaultNum) {
+  if (v == null) return { number: defaultNum, text: '' };
+  if (typeof v === 'string') return { number: defaultNum, text: v };
+  return {
+    number: v.number || v.n || v.id || v.ayah || v.verse_number || defaultNum,
+    text:   v.text || v.arab || v.arabic || v.arabic_text || v.content || '',
+  };
+}
+
+function emptySurah(num) {
+  return { number: num, name: 'سورة ' + num, verses: [] };
+}
+
+// ============ بناء مصحف احتياطي ============
 function buildBuiltinQuran(surahsMeta) {
   return { surahs: (surahsMeta || []).map(s => ({
     number: s.n,
     name: s.name,
     verses: Array.from({ length: s.verses }, (_, i) => ({
       number: i + 1,
-      text: '[النص غير متوفر — أعد بناء التطبيق بعد تشغيل سكربت التنزيل]',
+      text: '[النص غير متوفر]',
     })),
   }))};
 }
-
-// تحميل النص المدمج القديم (للسور الثلاث) عند الحاجة
-const BUILTIN_QURAN_FALLBACK = {
-  surahs: [
-    { number: 1, name: 'الفاتحة', verses: [
-      { number: 1, text: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ' },
-      { number: 2, text: 'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ' },
-      { number: 3, text: 'الرَّحْمَٰنِ الرَّحِيمِ' },
-      { number: 4, text: 'مَالِكِ يَوْمِ الدِّينِ' },
-      { number: 5, text: 'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ' },
-      { number: 6, text: 'اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ' },
-      { number: 7, text: 'صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ' },
-    ]},
-  ],
-};
 
 window.DataLoader = {
   loadSurahsMeta,
   loadFullQuran,
   normalizeQuran,
   buildBuiltinQuran,
-  BUILTIN_QURAN_FALLBACK,
 };
