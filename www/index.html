@@ -23,8 +23,14 @@
     <header class="topbar">
       <button id="menu-btn" class="icon-btn">☰</button>
       <h1 class="app-title">مصحف ليبيا</h1>
-      <button id="theme-btn" class="icon-btn">🌙</button>
+      <div class="topbar-actions">
+        <button id="search-btn" class="icon-btn" title="بحث في القرآن">🔍</button>
+        <button id="theme-btn" class="icon-btn">🌙</button>
+      </div>
     </header>
+    <div class="reading-progress">
+      <div id="reading-progress-bar" class="reading-progress-bar"></div>
+    </div>
 
     <main id="reader" class="reader">
       <div class="surah-info">
@@ -66,6 +72,8 @@
   <script src="js/db.js"></script>
   <script src="js/data-loader.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/tajweed.js"></script>
+  <script src="js/search.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

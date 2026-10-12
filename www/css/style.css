@@ -189,3 +189,156 @@ body {
 .surah-list li .surah-type {
   font-size: .75rem; opacity: .5; margin-left: .5rem;
 }
+
+/* ========== إضافات المرحلة 3 ========== */
+
+/* شريط تقدم القراءة */
+.reading-progress {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: transparent;
+  z-index: 101;
+}
+.reading-progress-bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--gold), #ffd77a);
+  transition: width .2s;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: .25rem;
+}
+
+/* ألوان التجويد */
+.tj { transition: color .2s; }
+.tj-ghunnah, .tj-idgham, .tj-ikhfa, .tj-iqlab,
+.tj-qalqalah, .tj-madd_muttasil, .tj-madd_asli {
+  font-weight: 500;
+}
+
+/* عرض مفتاح التجويد */
+.tajweed-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding: .75rem;
+  background: var(--verse-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: .85rem;
+}
+.tajweed-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+.tajweed-legend .legend-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+}
+
+/* البحث */
+.search-results {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.search-result {
+  padding: .75rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .2s;
+}
+.search-result:hover {
+  background: var(--verse-active);
+}
+.search-result .sr-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: .85rem;
+  color: var(--text-2);
+  margin-bottom: .35rem;
+}
+.search-result .sr-text {
+  font-family: 'Traditional Arabic', 'Amiri', serif;
+  font-size: 1.15rem;
+  line-height: 1.8;
+}
+.search-hl {
+  background: #fff3a0;
+  color: #000;
+  padding: 0 .15rem;
+  border-radius: 3px;
+}
+[data-theme="dark"] .search-hl {
+  background: #6b5a00;
+  color: #fff;
+}
+
+/* نافذة البحث */
+.search-modal-content {
+  max-width: 700px;
+}
+.search-input-lg {
+  width: 100%;
+  padding: .9rem 1rem;
+  font-size: 1.05rem;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--verse-bg);
+  color: var(--text);
+  font-family: inherit;
+  margin-bottom: 1rem;
+}
+.search-input-lg:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+/* حالة عدم وجود نتائج */
+.no-results {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-2);
+  font-size: 1.05rem;
+}
+
+/* عدّاد النتائج */
+.results-count {
+  font-size: .85rem;
+  color: var(--text-2);
+  padding: .5rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: .5rem;
+}
+
+/* معلومات السورة */
+.surah-meta-badges {
+  display: flex;
+  justify-content: center;
+  gap: .5rem;
+  margin-top: .35rem;
+  flex-wrap: wrap;
+}
+.surah-meta-badges span {
+  font-size: .78rem;
+  padding: .2rem .6rem;
+  background: var(--verse-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-2);
+  font-family: sans-serif;
+}
+
+/* وضع التركيز */
+.focus-mode .verse:not(.active):not(:hover) {
+  opacity: 0.35;
+  transition: opacity .3s;
+}
+.focus-mode .verse:hover,
+.focus-mode .verse.active {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--gold);
+}

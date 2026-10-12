@@ -397,6 +397,150 @@ function closeModal() {
   document.getElementById('modal').classList.add('hidden');
 }
 
+
+// ==================== الميزات الجديدة (المرحلة 3) ====================
+
+function openSearchModal() {
+  openModal('🔍 البحث في القرآن', `
+    <div class="search-modal-content">
+      <input type="text" id="quran-search-input" class="search-input-lg"
+             placeholder="اكتب كلمة أو آية..." autofocus />
+      <div id="search-results-container" class="search-results"></div>
+    </div>
+  `);
+
+  const input = document.getElementById('quran-search-input');
+  if (input) {
+    setTimeout(() => input.focus(), 100);
+    input.oninput = debounce((e) => {
+      const q = e.target.value.trim();
+      const container = document.getElementById('search-results-container');
+
+      if (q.length < 2) {
+        container.innerHTML = '<div class="no-results">اكتب حرفين على الأقل للبحث</div>';
+        return;
+      }
+
+      const results = QuranSearch.query(q, 50);
+
+      if (!results.length) {
+        container.innerHTML = '<div class="no-results">لا توجد نتائج مطابقة</div>';
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="results-count">عدد النتائج: ${results.length} آية</div>
+        ${results.map(r => `
+          <div class="search-result" onclick="goToVerse(${r.surahNum}, ${r.ayahNum})">
+            <div class="sr-header">
+              <span>${r.surahName}</span>
+              <span>آية ${r.ayahNum}</span>
+            </div>
+            <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
+          </div>
+        `).join('')}
+      `;
+    }, 250);
+
+    document.getElementById('search-results-container').innerHTML =
+      '<div class="no-results">اكتب حرفين على الأقل للبحث في 6236 آية</div>';
+  }
+}
+
+function showTajweedLegend() {
+  const html = `
+    <div class="tajweed-legend">
+      ${Tajweed.rules.map(r => `
+        <div class="legend-item">
+          <span class="legend-dot" style="background:${r.color}"></span>
+          <span>${r.label}</span>
+        </div>
+      `).join('')}
+    </div>
+    <p style="font-size:.9rem;color:var(--text-2);margin-bottom:1rem">
+      يتم تلوين أحكام التجويد تلقائياً في نص المصحف.
+    </p>
+    <button onclick="toggleTajweedFromModal()"
+            style="width:100%;padding:.75rem;background:var(--gold);color:var(--green);border:none;border-radius:8px;font-size:1rem;font-family:inherit;cursor:pointer;font-weight:bold">
+      ${Tajweed.isEnabled() ? '⏸ تعطيل التلوين التجويدي' : '▶ تفعيل التلوين التجويدي'}
+    </button>
+  `;
+  openModal('🎨 مفتاح التجويد', html);
+}
+
+window.toggleTajweedFromModal = function() {
+  const enabled = Tajweed.toggle(!Tajweed.isEnabled());
+  DB.saveUserData('tajweed', enabled);
+  closeModal();
+  renderSurah(state.currentSurah);
+  setTimeout(() => showTajweedLegend(), 200);
+};
+
+function updateReadingProgress() {
+  const scrollTop = window.scrollY;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+  const bar = document.getElementById('reading-progress-bar');
+  if (bar) bar.style.width = Math.max(0, Math.min(100, progress)) + '%';
+}
+
+function openSettingsNew() {
+  const html = `
+    <div class="settings">
+      <label>حجم الخط</label>
+      <input type="range" min="1.2" max="2.4" step="0.1" value="${state.fontSize}"
+             oninput="setFontSize(this.value)" />
+      <label>القارئ</label>
+      <select onchange="setReader(this.value)">
+        ${Object.entries(READERS).map(([k, v]) =>
+          `<option value="${k}" ${state.reader===k?'selected':''}>${v.name}</option>`
+        ).join('')}
+      </select>
+      <label>التلوين التجويدي</label>
+      <div style="display:flex;gap:.5rem;align-items:center;margin:.5rem 0">
+        <input type="checkbox" id="tajweed-check" ${Tajweed.isEnabled()?'checked':''}
+               onchange="setTajweed(this.checked)" style="width:20px;height:20px" />
+        <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
+      </div>
+      <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
+        <div>📊 <strong>إحصاءاتك:</strong></div>
+        <div style="margin-top:.5rem">
+          ✅ آيات محفوظة: ${Object.values(state.progress).filter(p=>p.memorized).length}<br>
+          🔖 علامات: ${state.bookmarks.length}<br>
+          📝 ملاحظات: ${Object.keys(state.notes).length}<br>
+          📖 آخر سورة: ${state.currentSurah}<br>
+          🎨 التجويد: ${Tajweed.isEnabled() ? 'مفعّل' : 'معطّل'}
+        </div>
+      </div>
+    </div>
+  `;
+  openModal('⚙️ الإعدادات', html);
+}
+
+window.setTajweed = function(enabled) {
+  Tajweed.toggle(enabled);
+  DB.saveUserData('tajweed', enabled);
+  closeModal();
+  renderSurah(state.currentSurah);
+};
+
+window.setViewMode = function(mode) {
+  state.viewMode = mode;
+  DB.saveUserData('viewMode', mode);
+  applyViewMode();
+};
+
+function applyViewMode() {
+  const container = document.querySelector('.reader');
+  if (!container) return;
+  if (state.viewMode === 'focus') {
+    container.classList.add('focus-mode');
+  } else {
+    container.classList.remove('focus-mode');
+  }
+}
+
+
 // ==================== Service Worker ====================
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
