@@ -1,29 +1,36 @@
-// ============ وحدة التفاسير ============
+// ============ وحدة التفاسير — تحميل عبر <script> ============
 
 const TAFSIR_SOURCES = {
-  muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', file: 'tafsir-muyassar.txt.gz' },
-  'ibn-kathir': { id: 'ibn-kathir',   name: 'تفسير ابن كثير', file: 'tafsir-ibn-kathir.txt.gz' },
-  jalalayn:     { id: 'jalalayn',     name: 'تفسير الجلالين', file: 'tafsir-jalalayn.txt.gz' },
-  saadi:        { id: 'saadi',        name: 'تفسير السعدي',   file: 'tafsir-saadi.txt.gz' },
-  tabari:       { id: 'tabari',       name: 'تفسير الطبري',   file: 'tafsir-tabari.txt.gz' },
-  qurtubi:      { id: 'qurtubi',      name: 'تفسير القرطبي',  file: 'tafsir-qurtubi.txt.gz' },
+  muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', script: 'tafsir-muyassar' },
+  'ibn-kathir': { id: 'ibn-kathir',   name: 'تفسير ابن كثير', script: 'tafsir-ibn-kathir' },
+  jalalayn:     { id: 'jalalayn',     name: 'تفسير الجلالين', script: 'tafsir-jalalayn' },
+  saadi:        { id: 'saadi',        name: 'تفسير السعدي',   script: 'tafsir-saadi' },
+  tabari:       { id: 'tabari',       name: 'تفسير الطبري',   script: 'tafsir-tabari' },
+  qurtubi:      { id: 'qurtubi',      name: 'تفسير القرطبي',  script: 'tafsir-qurtubi' },
 };
 
 let _cache = {};
 
-async function decompressGzip(response) {
-  const buffer = await response.arrayBuffer();
-  if (typeof pako !== 'undefined') {
-    const text = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-    return JSON.parse(text);
-  }
-  if (typeof DecompressionStream !== 'undefined') {
-    const ds = new DecompressionStream('gzip');
-    const blob = new Blob([buffer]);
-    const stream = blob.stream().pipeThrough(ds);
-    return JSON.parse(await new Response(stream).text());
-  }
-  throw new Error('فك الضغط غير مدعوم');
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[data-qd="' + src + '"]')) {
+      return resolve();
+    }
+    const s = document.createElement('script');
+    s.src = src;
+    s.setAttribute('data-qd', src);
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('فشل تحميل: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+function base64ToUint8(b64) {
+  const bin = atob(b64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 async function loadTafsir(tafsirId) {
@@ -39,18 +46,38 @@ async function loadTafsir(tafsirId) {
     }
   } catch (e) { /* تجاهل */ }
 
-  // 2. حمّل الملف
-  const url = 'data/' + TAFSIR_SOURCES[tafsirId].file;
-  console.log('📖 تحميل:', url);
-  const res = await fetch(url);
-  console.log('استجابة:', res.status);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  // 2. حمّل السكربت
+  const baseName = TAFSIR_SOURCES[tafsirId].script;
+  const scriptPath = 'data/' + baseName + '.js';
 
-  const data = await decompressGzip(res);
-  if (!data.surahs || data.surahs.length === 0) {
-    throw new Error('الملف فارغ');
+  if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
+    await loadScript(scriptPath);
   }
 
+  const b64 = window.QURAN_DATA && window.QURAN_DATA[baseName];
+  if (!b64) throw new Error('البيانات مفقودة: ' + baseName);
+
+  // فك الترميز والضغط
+  const gzBytes = base64ToUint8(b64);
+  let jsonStr;
+  if (typeof pako !== 'undefined') {
+    jsonStr = pako.ungzip(gzBytes, { to: 'string' });
+  } else if (typeof DecompressionStream !== 'undefined') {
+    const ds = new DecompressionStream('gzip');
+    const blob = new Blob([gzBytes]);
+    const stream = blob.stream().pipeThrough(ds);
+    jsonStr = await new Response(stream).text();
+  } else {
+    throw new Error('فك الضغط غير مدعوم');
+  }
+
+  const data = JSON.parse(jsonStr);
+  if (!data.surahs || !data.surahs.length) throw new Error('الملف فارغ');
+
+  // حرّر الذاكرة
+  try { delete window.QURAN_DATA[baseName]; } catch (e) {}
+
+  // احفظ في IndexedDB
   try { await DB.dbPut('tafsir', tafsirId, data); } catch (e) { /* تجاهل */ }
   _cache[tafsirId] = data;
   return data;

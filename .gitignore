@@ -1,7 +1,4 @@
-# Node modules
 node_modules/
-
-# Android build artifacts
 android/.gradle/
 android/app/build/
 android/build/
@@ -10,21 +7,11 @@ android/.idea/
 android/capacitor-cordova-android-plugins/
 android/app/src/main/assets/public/
 
-# ملفات مؤقتة
 *.log
 .DS_Store
 editions.json
 tafsir-log.txt
 trans-log.txt
 
-# الملفات غير المضغوطة (نحتفظ فقط بـ .txt.gz)
-www/data/tafsir-*.json
-www/data/tafsir-*.json.gz
-www/data/trans-*.json
-www/data/trans-*.json.gz
-www/data/quran.json.gz
-www/data/surahs.json.gz
-
-# نُبقي:
-# - quran.json و surahs.json
-# - كل ملفات .txt.gz
+# منع أي ملفات .gz قديمة
+www/data/*.gz
