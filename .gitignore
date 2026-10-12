@@ -8,6 +8,7 @@ android/build/
 android/local.properties
 android/.idea/
 android/capacitor-cordova-android-plugins/
+android/app/src/main/assets/public/
 
 # ملفات مؤقتة
 *.log
@@ -16,11 +17,14 @@ editions.json
 tafsir-log.txt
 trans-log.txt
 
-# التفاسير والترجمات (نحتفظ فقط بالنسخ المضغوطة .gz)
+# التفاسير والترجمات غير المضغوطة (نحتفظ فقط بـ .gz)
 www/data/tafsir-*.json
 www/data/trans-*.json
 
-# نُبقي النسخ المضغوطة والملفات الأساسية
-!www/data/quran.json
-!www/data/surahs.json
-!www/data/*.json.gz
+# منع الملفات المكررة (المشكلة الأخيرة!)
+www/data/quran.json.gz
+www/data/surahs.json.gz
+
+# نُبقي:
+# - quran.json و surahs.json (أساسية، غير مضغوطة)
+# - كل ملفات التفاسير والترجمات المضغوطة (.gz)
