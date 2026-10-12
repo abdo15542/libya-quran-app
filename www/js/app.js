@@ -5,11 +5,11 @@ let state = {
   currentSurah: 1,
   theme: 'light',
   fontSize: 1.6,
+  viewMode: 'normal',
   bookmarks: [],
   notes: {},
-  progress: {},        // { "1:5": { hide: 0 } }
-  lastRead: {},
-  reader: 'frgany',    // القارئ الافتراضي
+  progress: {},
+  reader: 'frgany',
 };
 
 const READERS = {
@@ -26,14 +26,18 @@ async function init() {
   state.theme = prefersDark ? 'dark' : 'light';
   applyTheme();
 
-  // استرجاع الإعدادات
   state.bookmarks = (await DB.getUserData('bookmarks')) || [];
   state.notes     = (await DB.getUserData('notes')) || {};
   state.progress  = (await DB.getUserData('progress')) || {};
   state.fontSize  = (await DB.getUserData('fontSize')) || 1.6;
   state.reader    = (await DB.getUserData('reader')) || 'frgany';
+  state.viewMode  = (await DB.getUserData('viewMode')) || 'normal';
+
   const lastSurah = await DB.getUserData('last_surah');
   if (lastSurah) state.currentSurah = lastSurah;
+
+  const tajweedEnabled = await DB.getUserData('tajweed');
+  if (tajweedEnabled && window.Tajweed) Tajweed.toggle(true);
 
   applyFontSize();
 
@@ -46,6 +50,12 @@ async function init() {
     state.data = await DataLoader.loadFullQuran((p) => {
       document.getElementById('progress-fill').style.width = Math.round(p * 100) + '%';
     });
+
+    if (window.QuranSearch) {
+      status.textContent = 'بناء فهرس البحث...';
+      const total = QuranSearch.build(state.data, state.surahsMeta);
+      console.log('فهرس البحث:', total, 'آية');
+    }
 
     status.textContent = 'جاهز!';
     document.getElementById('progress-fill').style.width = '100%';
@@ -66,33 +76,37 @@ function showApp() {
 
 // ==================== الأحداث ====================
 function setupEvents() {
-  document.getElementById('menu-btn').onclick  = () => toggleSidebar(true);
-  document.getElementById('theme-btn').onclick = toggleTheme;
-  document.getElementById('prev-btn').onclick  = () => navSurah(-1);
-  document.getElementById('next-btn').onclick  = () => navSurah(1);
-  document.getElementById('play-btn').onclick  = togglePlay;
+  const menuBtn = document.getElementById('menu-btn');
+  const themeBtn = document.getElementById('theme-btn');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const playBtn = document.getElementById('play-btn');
+  const searchBtn = document.getElementById('search-btn');
+
+  if (menuBtn) menuBtn.onclick = () => toggleSidebar(true);
+  if (themeBtn) themeBtn.onclick = toggleTheme;
+  if (prevBtn) prevBtn.onclick = () => navSurah(-1);
+  if (nextBtn) nextBtn.onclick = () => navSurah(1);
+  if (playBtn) playBtn.onclick = togglePlay;
+  if (searchBtn) searchBtn.onclick = () => openSearchModal();
 
   document.querySelectorAll('#toolbar button').forEach(btn => {
     btn.onclick = () => handleToolbar(btn.dataset.action);
   });
 
-  document.getElementById('modal-close').onclick = closeModal;
-  document.getElementById('modal').onclick = (e) => {
-    if (e.target.id === 'modal') closeModal();
-  };
+  const modalClose = document.getElementById('modal-close');
+  const modal = document.getElementById('modal');
+  if (modalClose) modalClose.onclick = closeModal;
+  if (modal) modal.onclick = (e) => { if (e.target.id === 'modal') closeModal(); };
 
-  // البحث
   const searchInput = document.getElementById('search-input');
-  if (searchInput) {
-    searchInput.oninput = debounce(onSearch, 300);
-  }
+  if (searchInput) searchInput.oninput = debounce(onSidebarSearch, 300);
 
-  // إغلاق القائمة عند النقر خارجها
+  window.addEventListener('scroll', updateReadingProgress, { passive: true });
+
   document.addEventListener('click', (e) => {
     const sb = document.getElementById('sidebar');
-    if (sb.classList.contains('open') &&
-        !sb.contains(e.target) &&
-        e.target.id !== 'menu-btn') {
+    if (sb && sb.classList.contains('open') && !sb.contains(e.target) && e.target.id !== 'menu-btn') {
       toggleSidebar(false);
     }
   });
@@ -101,9 +115,9 @@ function setupEvents() {
 // ==================== عرض فهرس السور ====================
 function renderSurahList(filter = '') {
   const ul = document.getElementById('surah-list');
+  if (!ul) return;
   ul.innerHTML = '';
   const list = state.surahsMeta.length ? state.surahsMeta : [];
-
   const q = filter.trim();
   const filtered = q
     ? list.filter(s => s.name.includes(q) || String(s.n).includes(q) || (s.en || '').toLowerCase().includes(q.toLowerCase()))
@@ -130,6 +144,11 @@ function renderSurahList(filter = '') {
   });
 }
 
+function onSidebarSearch(e) {
+  const q = e.target.value.trim();
+  if (state.surahsMeta.length) renderSurahList(q);
+}
+
 // ==================== عرض السورة ====================
 function renderSurah(num) {
   const surahs = state.data?.surahs || [];
@@ -137,14 +156,16 @@ function renderSurah(num) {
   if (!surah) return;
 
   const meta = state.surahsMeta.find(s => s.n === num) || {};
-  document.getElementById('surah-title').textContent = 'سورة ' + (surah.name || meta.name || '');
-  document.getElementById('page-info').textContent =
-    (meta.type || '') + ' • ' + (surah.verses?.length || meta.verses || 0) + ' آية';
+  const titleEl = document.getElementById('surah-title');
+  const pageEl = document.getElementById('page-info');
+  if (titleEl) titleEl.textContent = 'سورة ' + (surah.name || meta.name || '');
+  if (pageEl) pageEl.textContent = (meta.type || '') + ' • ' + (surah.verses?.length || meta.verses || 0) + ' آية';
 
   const container = document.getElementById('verses-container');
+  if (!container) return;
   container.innerHTML = '';
 
-  // البسملة (عدا التوبة — استثناء شرعي)
+  // البسملة (عدا التوبة)
   if (num !== 9) {
     const bs = document.createElement('div');
     bs.className = 'bismillah';
@@ -152,25 +173,41 @@ function renderSurah(num) {
     container.appendChild(bs);
   }
 
+  const tajweedOn = window.Tajweed && Tajweed.isEnabled();
+
   (surah.verses || []).forEach(v => {
     const div = document.createElement('div');
     div.className = 'verse';
     div.dataset.ayah = v.number;
     div.dataset.hide = (state.progress[num + ':' + v.number]?.hide) || 0;
 
-    const words = (v.text || '').split(/\s+/)
-      .map(w => `<span class="w">${w}</span>`).join(' ');
+    let processedText;
+    if (tajweedOn) {
+      processedText = Tajweed.apply(v.text || '');
+    } else {
+      processedText = (v.text || '').split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ');
+    }
+
     div.innerHTML = `
       <span class="verse-number">${v.number}</span>
-      <span class="verse-text">${words}</span>
-      <button class="verse-actions-btn" onclick="showVerseActions(${num},${v.number})">⋯</button>
+      <span class="verse-text">${processedText}</span>
+      <button class="verse-actions-btn" type="button">⋯</button>
     `;
-    div.onclick = (e) => { if (!e.target.closest('.verse-actions-btn')) toggleVerseHide(div, num, v.number); };
+
+    div.addEventListener('click', (e) => {
+      if (e.target.closest('.verse-actions-btn')) {
+        showVerseActions(num, v.number);
+      } else {
+        toggleVerseHide(div, num, v.number);
+      }
+    });
     container.appendChild(div);
   });
 
   DB.saveUserData('last_surah', num);
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  applyViewMode();
+  setTimeout(updateReadingProgress, 100);
 }
 
 function navSurah(delta) {
@@ -182,18 +219,18 @@ function navSurah(delta) {
   renderSurah(next);
 }
 
-// ==================== إخفاء الكلمات للحفظ ====================
+// ==================== إخفاء الكلمات ====================
 function toggleVerseHide(el, surahNum, ayahNum) {
   const key = surahNum + ':' + ayahNum;
   const cur = state.progress[key]?.hide || 0;
-  const next = (cur + 1) % 5;  // 0 → 1 → 2 → 3 → 4 → 0
+  const next = (cur + 1) % 5;
   el.dataset.hide = next;
   state.progress[key] = { ...(state.progress[key] || {}), hide: next };
   DB.saveUserData('progress', state.progress);
 }
 
 // ==================== إجراءات الآية ====================
-window.showVerseActions = function(surahNum, ayahNum) {
+function showVerseActions(surahNum, ayahNum) {
   const key = surahNum + ':' + ayahNum;
   const cur = state.progress[key] || {};
   openModal('خيارات الآية', `
@@ -205,13 +242,12 @@ window.showVerseActions = function(surahNum, ayahNum) {
         ${isVerseBookmarked(surahNum, ayahNum) ? '✖ إزالة العلامة' : '🔖 إضافة علامة'}
       </button>
       <button onclick="openVerseNote(${surahNum},${ayahNum})">📝 ملاحظة</button>
-      <button onclick="showTafseer(${surahNum},${ayahNum})">📖 تفسير</button>
       <button onclick="markMemorized(${surahNum},${ayahNum})">
         ${cur.memorized ? '↺ إلغاء الحفظ' : '✅ تم الحفظ'}
       </button>
     </div>
   `);
-};
+}
 
 function toggleVerseBookmark(s, a) {
   const id = s + ':' + a;
@@ -245,20 +281,19 @@ function markMemorized(s, a) {
 }
 
 function repeatVerse(s, a, times) {
-  const url = getAudioUrl(s);
-  Audio.setRepeat(times);
-  Audio.play(url);
+  if (window.Audio) {
+    Audio.setRepeat(times);
+    Audio.play(getAudioUrl(s));
+  }
   closeModal();
-  document.getElementById('play-btn').textContent = '⏸ إيقاف';
-}
-
-function showTafseer(s, a) {
-  openModal('تفسير الآية', 'سيتم تحميل التفاسير الكاملة في المرحلة القادمة.');
+  const btn = document.getElementById('play-btn');
+  if (btn) btn.textContent = '⏸ إيقاف';
 }
 
 // ==================== القائمة الجانبية ====================
 function toggleSidebar(open) {
   const sb = document.getElementById('sidebar');
+  if (!sb) return;
   if (open === undefined) sb.classList.toggle('open');
   else sb.classList.toggle('open', open);
 }
@@ -288,29 +323,31 @@ function getAudioUrl(surahNum) {
 }
 function togglePlay() {
   const btn = document.getElementById('play-btn');
+  if (!window.Audio) return;
   if (isPlaying) {
     Audio.pause();
-    btn.textContent = '▶ تشغيل';
+    if (btn) btn.textContent = '▶ تشغيل';
     isPlaying = false;
   } else {
     Audio.setRepeat(1);
     Audio.play(getAudioUrl(state.currentSurah));
-    btn.textContent = '⏸ إيقاف';
+    if (btn) btn.textContent = '⏸ إيقاف';
     isPlaying = true;
   }
 }
 window.addEventListener('audio-ended', () => {
-  document.getElementById('play-btn').textContent = '▶ تشغيل';
+  const btn = document.getElementById('play-btn');
+  if (btn) btn.textContent = '▶ تشغيل';
   isPlaying = false;
 });
 
 // ==================== شريط الأدوات ====================
 function handleToolbar(action) {
-  if (action === 'tafseer')   openModal('التفسير', 'سيتم دمج التفاسير قريباً.');
-  else if (action === 'bookmark') showBookmarks();
-  else if (action === 'note')  openNote();
-  else if (action === 'translate') openModal('الترجمة', 'سيتم دمج الترجمات قريباً.');
-  else if (action === 'settings') openSettings();
+  if (action === 'tafseer')        showTajweedLegend();
+  else if (action === 'bookmark')  showBookmarks();
+  else if (action === 'note')      openNote();
+  else if (action === 'translate') openSearchModal();
+  else if (action === 'settings')  openSettingsNew();
 }
 
 function showBookmarks() {
@@ -325,15 +362,15 @@ function showBookmarks() {
   openModal('العلامات', html);
 }
 
-window.goToVerse = function(s, a) {
+function goToVerse(s, a) {
   state.currentSurah = s;
   renderSurah(s);
   closeModal();
   setTimeout(() => {
     const el = document.querySelector(`.verse[data-ayah="${a}"]`);
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('active'); }
-  }, 200);
-};
+  }, 300);
+}
 
 function openNote() {
   const note = prompt('ملاحظتك على السورة:');
@@ -341,147 +378,6 @@ function openNote() {
     state.notes['surah:' + state.currentSurah] = note;
     DB.saveUserData('notes', state.notes);
   }
-}
-
-function openSettings() {
-  const html = `
-    <div class="settings">
-      <label>حجم الخط</label>
-      <input type="range" min="1.2" max="2.4" step="0.1" value="${state.fontSize}"
-             oninput="setFontSize(this.value)" />
-      <label>القارئ</label>
-      <select onchange="setReader(this.value)">
-        ${Object.entries(READERS).map(([k, v]) =>
-          `<option value="${k}" ${state.reader===k?'selected':''}>${v.name}</option>`
-        ).join('')}
-      </select>
-      <div style="margin-top:1rem;font-size:.85rem;opacity:.7">
-        آيات محفوظة: ${Object.values(state.progress).filter(p=>p.memorized).length}<br>
-        علامات: ${state.bookmarks.length}<br>
-        ملاحظات: ${Object.keys(state.notes).length}
-      </div>
-    </div>
-  `;
-  openModal('الإعدادات', html);
-}
-
-window.setFontSize = function(v) {
-  state.fontSize = parseFloat(v);
-  applyFontSize();
-  DB.saveUserData('fontSize', state.fontSize);
-};
-window.setReader = function(r) {
-  state.reader = r;
-  DB.saveUserData('reader', r);
-};
-
-// ==================== البحث ====================
-function onSearch(e) {
-  const q = e.target.value.trim();
-  if (q.length < 2) return;
-  if (state.surahsMeta.length) renderSurahList(q);
-}
-
-function debounce(fn, ms) {
-  let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-}
-
-// ==================== Modal ====================
-function openModal(title, body) {
-  document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-body').innerHTML = body;
-  document.getElementById('modal').classList.remove('hidden');
-}
-function closeModal() {
-  document.getElementById('modal').classList.add('hidden');
-}
-
-
-// ==================== الميزات الجديدة (المرحلة 3) ====================
-
-function openSearchModal() {
-  openModal('🔍 البحث في القرآن', `
-    <div class="search-modal-content">
-      <input type="text" id="quran-search-input" class="search-input-lg"
-             placeholder="اكتب كلمة أو آية..." autofocus />
-      <div id="search-results-container" class="search-results"></div>
-    </div>
-  `);
-
-  const input = document.getElementById('quran-search-input');
-  if (input) {
-    setTimeout(() => input.focus(), 100);
-    input.oninput = debounce((e) => {
-      const q = e.target.value.trim();
-      const container = document.getElementById('search-results-container');
-
-      if (q.length < 2) {
-        container.innerHTML = '<div class="no-results">اكتب حرفين على الأقل للبحث</div>';
-        return;
-      }
-
-      const results = QuranSearch.query(q, 50);
-
-      if (!results.length) {
-        container.innerHTML = '<div class="no-results">لا توجد نتائج مطابقة</div>';
-        return;
-      }
-
-      container.innerHTML = `
-        <div class="results-count">عدد النتائج: ${results.length} آية</div>
-        ${results.map(r => `
-          <div class="search-result" onclick="goToVerse(${r.surahNum}, ${r.ayahNum})">
-            <div class="sr-header">
-              <span>${r.surahName}</span>
-              <span>آية ${r.ayahNum}</span>
-            </div>
-            <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
-          </div>
-        `).join('')}
-      `;
-    }, 250);
-
-    document.getElementById('search-results-container').innerHTML =
-      '<div class="no-results">اكتب حرفين على الأقل للبحث في 6236 آية</div>';
-  }
-}
-
-function showTajweedLegend() {
-  const html = `
-    <div class="tajweed-legend">
-      ${Tajweed.rules.map(r => `
-        <div class="legend-item">
-          <span class="legend-dot" style="background:${r.color}"></span>
-          <span>${r.label}</span>
-        </div>
-      `).join('')}
-    </div>
-    <p style="font-size:.9rem;color:var(--text-2);margin-bottom:1rem">
-      يتم تلوين أحكام التجويد تلقائياً في نص المصحف.
-    </p>
-    <button onclick="toggleTajweedFromModal()"
-            style="width:100%;padding:.75rem;background:var(--gold);color:var(--green);border:none;border-radius:8px;font-size:1rem;font-family:inherit;cursor:pointer;font-weight:bold">
-      ${Tajweed.isEnabled() ? '⏸ تعطيل التلوين التجويدي' : '▶ تفعيل التلوين التجويدي'}
-    </button>
-  `;
-  openModal('🎨 مفتاح التجويد', html);
-}
-
-window.toggleTajweedFromModal = function() {
-  const enabled = Tajweed.toggle(!Tajweed.isEnabled());
-  DB.saveUserData('tajweed', enabled);
-  closeModal();
-  renderSurah(state.currentSurah);
-  setTimeout(() => showTajweedLegend(), 200);
-};
-
-function updateReadingProgress() {
-  const scrollTop = window.scrollY;
-  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-  const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
-  const bar = document.getElementById('reading-progress-bar');
-  if (bar) bar.style.width = Math.max(0, Math.min(100, progress)) + '%';
 }
 
 function openSettingsNew() {
@@ -498,10 +394,15 @@ function openSettingsNew() {
       </select>
       <label>التلوين التجويدي</label>
       <div style="display:flex;gap:.5rem;align-items:center;margin:.5rem 0">
-        <input type="checkbox" id="tajweed-check" ${Tajweed.isEnabled()?'checked':''}
+        <input type="checkbox" id="tajweed-check" ${window.Tajweed && Tajweed.isEnabled()?'checked':''}
                onchange="setTajweed(this.checked)" style="width:20px;height:20px" />
         <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
       </div>
+      <label>العرض</label>
+      <select onchange="setViewMode(this.value)">
+        <option value="normal" ${state.viewMode==='normal'?'selected':''}>عادي</option>
+        <option value="focus" ${state.viewMode==='focus'?'selected':''}>وضع التركيز</option>
+      </select>
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
         <div>📊 <strong>إحصاءاتك:</strong></div>
         <div style="margin-top:.5rem">
@@ -509,7 +410,7 @@ function openSettingsNew() {
           🔖 علامات: ${state.bookmarks.length}<br>
           📝 ملاحظات: ${Object.keys(state.notes).length}<br>
           📖 آخر سورة: ${state.currentSurah}<br>
-          🎨 التجويد: ${Tajweed.isEnabled() ? 'مفعّل' : 'معطّل'}
+          🎨 التجويد: ${window.Tajweed && Tajweed.isEnabled() ? 'مفعّل' : 'معطّل'}
         </div>
       </div>
     </div>
@@ -517,29 +418,159 @@ function openSettingsNew() {
   openModal('⚙️ الإعدادات', html);
 }
 
-window.setTajweed = function(enabled) {
-  Tajweed.toggle(enabled);
+function setFontSize(v) {
+  state.fontSize = parseFloat(v);
+  applyFontSize();
+  DB.saveUserData('fontSize', state.fontSize);
+}
+function setReader(r) {
+  state.reader = r;
+  DB.saveUserData('reader', r);
+}
+function setTajweed(enabled) {
+  if (window.Tajweed) Tajweed.toggle(enabled);
   DB.saveUserData('tajweed', enabled);
   closeModal();
   renderSurah(state.currentSurah);
-};
-
-window.setViewMode = function(mode) {
+}
+function setViewMode(mode) {
   state.viewMode = mode;
   DB.saveUserData('viewMode', mode);
   applyViewMode();
-};
-
+}
 function applyViewMode() {
   const container = document.querySelector('.reader');
   if (!container) return;
-  if (state.viewMode === 'focus') {
-    container.classList.add('focus-mode');
-  } else {
-    container.classList.remove('focus-mode');
-  }
+  if (state.viewMode === 'focus') container.classList.add('focus-mode');
+  else container.classList.remove('focus-mode');
 }
 
+// ==================== البحث في القرآن ====================
+function openSearchModal() {
+  openModal('🔍 البحث في القرآن', `
+    <div class="search-modal-content">
+      <input type="text" id="quran-search-input" class="search-input-lg"
+             placeholder="اكتب كلمة أو آية..." autofocus />
+      <div id="search-results-container" class="search-results">
+        <div class="no-results">اكتب حرفين على الأقل للبحث في 6236 آية</div>
+      </div>
+    </div>
+  `);
+
+  const input = document.getElementById('quran-search-input');
+  if (!input) return;
+
+  setTimeout(() => input.focus(), 100);
+
+  input.oninput = debounce((e) => {
+    const q = e.target.value.trim();
+    const container = document.getElementById('search-results-container');
+    if (!container) return;
+
+    if (q.length < 2) {
+      container.innerHTML = '<div class="no-results">اكتب حرفين على الأقل للبحث</div>';
+      return;
+    }
+
+    if (!window.QuranSearch) {
+      container.innerHTML = '<div class="no-results">وحدة البحث غير محمّلة</div>';
+      return;
+    }
+
+    const results = QuranSearch.query(q, 50);
+
+    if (!results.length) {
+      container.innerHTML = '<div class="no-results">لا توجد نتائج مطابقة</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="results-count">عدد النتائج: ${results.length} آية</div>
+      ${results.map(r => `
+        <div class="search-result" onclick="goToVerse(${r.surahNum}, ${r.ayahNum})">
+          <div class="sr-header">
+            <span>${r.surahName}</span>
+            <span>آية ${r.ayahNum}</span>
+          </div>
+          <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
+        </div>
+      `).join('')}
+    `;
+  }, 250);
+}
+
+function showTajweedLegend() {
+  if (!window.Tajweed) {
+    return openModal('التجويد', 'وحدة التجويد غير محمّلة.');
+  }
+  const html = `
+    <div class="tajweed-legend">
+      ${Tajweed.rules.map(r => `
+        <div class="legend-item">
+          <span class="legend-dot" style="background:${r.color}"></span>
+          <span>${r.label}</span>
+        </div>
+      `).join('')}
+    </div>
+    <p style="font-size:.9rem;color:var(--text-2);margin-bottom:1rem">
+      يتم تلوين أحكام التجويد تلقائياً في نص المصحف.
+    </p>
+    <button onclick="toggleTajweedFromModal()"
+            style="width:100%;padding:.75rem;background:var(--gold);color:var(--green);border:none;border-radius:8px;font-size:1rem;font-family:inherit;cursor:pointer;font-weight:bold">
+      ${Tajweed.isEnabled() ? '⏸ تعطيل التلوين' : '▶ تفعيل التلوين'}
+    </button>
+  `;
+  openModal('🎨 مفتاح التجويد', html);
+}
+
+function toggleTajweedFromModal() {
+  if (!window.Tajweed) return;
+  const enabled = Tajweed.toggle(!Tajweed.isEnabled());
+  DB.saveUserData('tajweed', enabled);
+  closeModal();
+  renderSurah(state.currentSurah);
+  setTimeout(() => showTajweedLegend(), 200);
+}
+
+function updateReadingProgress() {
+  const scrollTop = window.scrollY;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+  const bar = document.getElementById('reading-progress-bar');
+  if (bar) bar.style.width = Math.max(0, Math.min(100, progress)) + '%';
+}
+
+// ==================== أدوات مساعدة ====================
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+function openModal(title, body) {
+  const t = document.getElementById('modal-title');
+  const b = document.getElementById('modal-body');
+  const m = document.getElementById('modal');
+  if (t) t.textContent = title;
+  if (b) b.innerHTML = body;
+  if (m) m.classList.remove('hidden');
+}
+function closeModal() {
+  const m = document.getElementById('modal');
+  if (m) m.classList.add('hidden');
+}
+
+// إتاحة الدوال للنقر المضمن
+window.goToVerse = goToVerse;
+window.showVerseActions = showVerseActions;
+window.repeatVerse = repeatVerse;
+window.toggleVerseBookmark = toggleVerseBookmark;
+window.openVerseNote = openVerseNote;
+window.markMemorized = markMemorized;
+window.toggleTajweedFromModal = toggleTajweedFromModal;
+window.setFontSize = setFontSize;
+window.setReader = setReader;
+window.setTajweed = setTajweed;
+window.setViewMode = setViewMode;
 
 // ==================== Service Worker ====================
 if ('serviceWorker' in navigator) {
