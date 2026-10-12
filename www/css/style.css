@@ -465,3 +465,84 @@ body {
     padding: .3rem .5rem;
   }
 }
+
+/* ========== البحث المحسّن ========== */
+.search-summary {
+  margin-bottom: 1rem;
+}
+
+.search-summary:empty {
+  display: none;
+}
+
+.search-summary-card {
+  display: flex;
+  gap: .5rem;
+  justify-content: space-around;
+  padding: 1rem;
+  background: linear-gradient(135deg, var(--green), var(--green-light));
+  border-radius: 12px;
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.15);
+}
+
+.summary-stat {
+  text-align: center;
+  flex: 1;
+  border-left: 1px solid rgba(255,255,255,.2);
+}
+
+.summary-stat:first-child {
+  border-left: none;
+}
+
+.summary-num {
+  font-size: 1.75rem;
+  font-weight: bold;
+  color: var(--gold);
+  font-family: system-ui, sans-serif;
+  line-height: 1;
+}
+
+.summary-label {
+  font-size: .78rem;
+  opacity: .9;
+  margin-top: .35rem;
+}
+
+.sr-surah {
+  color: var(--green);
+  font-weight: bold;
+}
+
+[data-theme="dark"] .sr-surah {
+  color: var(--gold);
+}
+
+.sr-num {
+  font-family: system-ui, sans-serif;
+  font-size: .8rem;
+}
+
+.search-more {
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-2);
+  font-size: .9rem;
+  font-style: italic;
+  border-top: 1px dashed var(--border);
+  margin-top: .5rem;
+}
+
+.search-hl {
+  background: #fff3a0;
+  color: #000;
+  padding: 0 .2rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+[data-theme="dark"] .search-hl {
+  background: #6b5a00;
+  color: #fff;
+}

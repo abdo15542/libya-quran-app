@@ -612,7 +612,8 @@ function openSearchModal() {
   openModal('🔍 البحث في القرآن', `
     <div class="search-modal-content">
       <input type="text" id="quran-search-input" class="search-input-lg"
-             placeholder="اكتب كلمة أو آية..." autofocus />
+             placeholder="اكتب كلمة أو آية... مثال: الرحمن، الصبر، الله" autofocus />
+      <div id="search-summary" class="search-summary"></div>
       <div id="search-results-container" class="search-results">
         <div class="no-results">اكتب حرفين على الأقل للبحث في 6236 آية</div>
       </div>
@@ -627,10 +628,12 @@ function openSearchModal() {
   input.oninput = debounce((e) => {
     const q = e.target.value.trim();
     const container = document.getElementById('search-results-container');
+    const summary = document.getElementById('search-summary');
     if (!container) return;
 
     if (q.length < 2) {
       container.innerHTML = '<div class="no-results">اكتب حرفين على الأقل للبحث</div>';
+      if (summary) summary.innerHTML = '';
       return;
     }
 
@@ -639,30 +642,57 @@ function openSearchModal() {
       return;
     }
 
-    const results = QuranSearch.query(q, 0);
+    const { results, totalMatches, uniqueSurahs } = QuranSearch.query(q);
 
     if (!results.length) {
       container.innerHTML = '<div class="no-results">لا توجد نتائج مطابقة</div>';
+      if (summary) summary.innerHTML = '';
       return;
     }
 
-    const limit = 200;
-    const shown = results.slice(0, limit);
-    let html = '<div class="results-count">عدد النتائج: <strong>' + results.length + '</strong> آية';
-    if (results.length > limit) html += ' (يتم عرض أول ' + limit + ')';
-    html += '</div>';
-    html += shown.map(r => `
-      <div class="search-result" onclick="goToVerse(${r.surahNum}, ${r.ayahNum})">
-        <div class="sr-header">
-          <span>${r.surahName}</span>
-          <span>آية ${r.ayahNum}</span>
+    if (summary) {
+      summary.innerHTML = `
+        <div class="search-summary-card">
+          <div class="summary-stat">
+            <div class="summary-num">${totalMatches}</div>
+            <div class="summary-label">مرة ذُكرت</div>
+          </div>
+          <div class="summary-stat">
+            <div class="summary-num">${results.length}</div>
+            <div class="summary-label">آية</div>
+          </div>
+          <div class="summary-stat">
+            <div class="summary-num">${uniqueSurahs}</div>
+            <div class="summary-label">سورة</div>
+          </div>
         </div>
-        <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
-      </div>
-    `).join('');
+      `;
+    }
+
+    const limit = 100;
+    const shown = results.slice(0, limit);
+
+    let html = '';
+    shown.forEach(r => {
+      html += `
+        <div class="search-result" onclick="goToVerse(${r.s}, ${r.a})">
+          <div class="sr-header">
+            <span class="sr-surah">سورة ${r.sName}</span>
+            <span class="sr-num">آية ${r.a}</span>
+          </div>
+          <div class="sr-text">${QuranSearch.highlight(r.text, q)}</div>
+        </div>
+      `;
+    });
+
+    if (results.length > limit) {
+      html += `<div class="search-more">... و ${results.length - limit} نتيجة أخرى. أدخل كلمات أكثر لتضييق البحث.</div>`;
+    }
+
     container.innerHTML = html;
-  }, 250);
+  }, 300);
 }
+
 
 function showTajweedLegend() {
   if (!window.Tajweed) {

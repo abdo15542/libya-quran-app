@@ -1,17 +1,25 @@
-// ============ البحث في نص القرآن الكامل ============
-// فهرس في الذاكرة للبحث السريع
+// ============ البحث المتقدم في القرآن ============
 
 let searchIndex = null;
-let searchData = null;
 
+// تطبيع النص العربي — يتعامل مع رموز رواية قالون
 function normalizeArabic(text) {
-  return text
-    .replace(/[\u064B-\u065F\u0670]/g, '')  // إزالة التشكيل
-    .replace(/[\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED]/g, '')  // إزالة علامات الوقف
-    .replace(/[إأآا]/g, 'ا')
+  if (!text) return '';
+  return String(text)
+    // الألف الخنجرية → ألف عادي
+    .replace(/\u0670/g, 'ا')
+    // الألف الوصلية (ٱ) → ألف عادي
+    .replace(/\u0671/g, 'ا')
+    // احذف كل التشكيل والعلامات القرآنية
+    .replace(/[\u0610-\u061A\u064B-\u065F\u06D6-\u06ED\u08F0-\u08FF]/g, '')
+    // وحّد الألف
+    .replace(/[إأآٱا]/g, 'ا')
     .replace(/[ىي]/g, 'ي')
     .replace(/ة/g, 'ه')
     .replace(/[ؤئء]/g, 'ء')
+    // احذف التطويل
+    .replace(/\u0640/g, '')
+    // مسافات متعددة → مسافة واحدة
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -22,74 +30,109 @@ function buildSearchIndex(quranData, surahsMeta) {
 
   surahs.forEach((surah, surahIdx) => {
     const meta = surahsMeta.find(m => m.n === (surahIdx + 1)) || {};
+    const sName = surah.name || meta.name || ('سورة ' + (surahIdx + 1));
+
     (surah.verses || []).forEach(verse => {
+      const text = verse.text || '';
       docs.push({
-        id: `${surahIdx + 1}:${verse.number}`,
-        surahNum: surahIdx + 1,
-        surahName: surah.name || meta.name || `سورة ${surahIdx + 1}`,
-        ayahNum: verse.number,
-        text: verse.text || '',
-        normalized: normalizeArabic(verse.text || ''),
+        s: surahIdx + 1,
+        sName: sName,
+        a: verse.number,
+        text: text,
+        norm: normalizeArabic(text),
       });
     });
   });
 
   searchIndex = docs;
-  console.log(`✓ فهرس البحث جاهز: ${docs.length} آية`);
+  console.log('✓ فهرس البحث:', docs.length, 'آية');
   return docs.length;
 }
 
-function searchQuran(query, limit = 100) {
-  if (!searchIndex || !query) return [];
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-  const normalizedQuery = normalizeArabic(query);
-  if (normalizedQuery.length < 2) return [];
+function searchQuran(query) {
+  const empty = { results: [], totalMatches: 0, uniqueSurahs: 0 };
+  if (!searchIndex || !query) return empty;
+
+  const normalized = normalizeArabic(query);
+  if (normalized.length < 2) return empty;
+
+  const words = normalized.split(/\s+/).filter(w => w.length >= 2);
+  if (!words.length) return empty;
 
   const results = [];
-  const words = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
+  let totalMatches = 0;
+  const surahSet = new Set();
 
   for (const doc of searchIndex) {
     let score = 0;
-    let matched = false;
+    let matches = 0;
+    let allMatched = true;
 
     for (const word of words) {
-      if (doc.normalized.includes(word)) {
-        score += 1;
-        matched = true;
+      const regex = new RegExp(escapeRegex(word), 'g');
+      const m = doc.norm.match(regex);
+      if (m) {
+        matches += m.length;
+        score += m.length * 2;
+      } else {
+        allMatched = false;
+        break;
       }
     }
 
-    if (matched) {
-      // أولوية أعلى للآيات التي تبدأ بالكلمة المبحوث عنها
-      if (doc.normalized.startsWith(words[0])) score += 5;
-      // أولوية للمطابقة الكاملة
-      if (doc.normalized === normalizedQuery) score += 10;
-      results.push({ ...doc, score });
+    if (allMatched && matches > 0) {
+      // أولوية إضافية
+      if (doc.norm.includes(normalized)) score += 20;   // المطابقة الكاملة
+      if (doc.norm.startsWith(words[0])) score += 5;     // يبدأ بالكلمة
+
+      results.push({
+        s: doc.s,
+        sName: doc.sName,
+        a: doc.a,
+        text: doc.text,
+        score: score,
+        matches: matches,
+      });
+      totalMatches += matches;
+      surahSet.add(doc.s);
     }
   }
 
-  results.sort((a, b) => b.score - a.score);
-  return results.slice(0, limit);
+  results.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.s !== b.s) return a.s - b.s;
+    return a.a - b.a;
+  });
+
+  return {
+    results: results,
+    totalMatches: totalMatches,
+    uniqueSurahs: surahSet.size,
+  };
 }
 
 function highlightMatch(text, query) {
   if (!query) return text;
-  const normalized = normalizeArabic(text);
   const normalizedQuery = normalizeArabic(query);
+  const words = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
+  if (!words.length) return text;
 
-  // ابحث عن الموقع في النص الأصلي
-  const words = text.split(/\s+/);
-  const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
-
-  return words.map(word => {
-    const nWord = normalizeArabic(word);
-    for (const qw of queryWords) {
-      if (nWord.includes(qw)) {
-        return `<mark class="search-hl">${word}</mark>`;
+  // قسّم النص إلى أجزاء (كلمات + فواصل)
+  const parts = text.split(/(\s+)/);
+  return parts.map(part => {
+    if (/^\s+$/.test(part) || !part) return part;
+    const normPart = normalizeArabic(part);
+    for (const q of words) {
+      if (normPart === q || normPart.includes(q) || q.includes(normPart)) {
+        return `<mark class="search-hl">${part}</mark>`;
       }
     }
-    return word;
-  }).join(' ');
+    return part;
+  }).join('');
 }
 
 window.QuranSearch = {
