@@ -1,37 +1,30 @@
-// ============ وحدة التفاسير — مع إصلاح loadScript ============
+// ============ وحدة التفاسير — مع تحميل ديناميكي ============
 
 const TAFSIR_SOURCES = {
-  muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', script: 'tafsir-muyassar' },
-  'ibn-kathir': { id: 'ibn-kathir',   name: 'تفسير ابن كثير', script: 'tafsir-ibn-kathir' },
-  jalalayn:     { id: 'jalalayn',     name: 'تفسير الجلالين', script: 'tafsir-jalalayn' },
-  saadi:        { id: 'saadi',        name: 'تفسير السعدي',   script: 'tafsir-saadi' },
-  tabari:       { id: 'tabari',       name: 'تفسير الطبري',   script: 'tafsir-tabari' },
-  qurtubi:      { id: 'qurtubi',      name: 'تفسير القرطبي',  script: 'tafsir-qurtubi' },
+  muyassar:     { id: 'muyassar',     name: 'التفسير الميسر', script: 'tafsir-muyassar', bundled: true },
+  'ibn-kathir': { id: 'ibn-kathir',   name: 'تفسير ابن كثير', script: 'tafsir-ibn-kathir', bundled: false },
+  jalalayn:     { id: 'jalalayn',     name: 'تفسير الجلالين', script: 'tafsir-jalalayn', bundled: false },
+  saadi:        { id: 'saadi',        name: 'تفسير السعدي',   script: 'tafsir-saadi', bundled: false },
+  tabari:       { id: 'tabari',       name: 'تفسير الطبري',   script: 'tafsir-tabari', bundled: false },
+  qurtubi:      { id: 'qurtubi',      name: 'تفسير القرطبي',  script: 'tafsir-qurtubi', bundled: false },
 };
 
+// رابط التنزيل من GitHub Releases (استبدله برابطك الفعلي)
+const REMOTE_DATA_URL = 'https://github.com/abdo15542/libya-quran-app/releases/download/data-v1/extra-data.zip';
+
 let _cache = {};
-const _scriptState = {}; // 'pending' | 'ok' | 'error'
+const _scriptState = {};
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (_scriptState[src] === 'ok') return resolve();
-    if (_scriptState[src] === 'pending') {
-      // انتظر حتى ينتهي
-      const t = setInterval(() => {
-        if (_scriptState[src] === 'ok') { clearInterval(t); resolve(); }
-        else if (_scriptState[src] === 'error') { clearInterval(t); reject(new Error('فشل سابق')); }
-      }, 100);
-      setTimeout(() => { clearInterval(t); reject(new Error('مهلة')); }, 30000);
-      return;
-    }
-
+    if (_scriptState[src] === 'error') return reject(new Error('فشل سابق: ' + src));
     _scriptState[src] = 'pending';
     const s = document.createElement('script');
     s.src = src;
     s.onload = () => { _scriptState[src] = 'ok'; resolve(); };
     s.onerror = () => {
       _scriptState[src] = 'error';
-      // احذف الوسم الفاشل
       if (s.parentNode) s.parentNode.removeChild(s);
       reject(new Error('فشل تحميل: ' + src));
     };
@@ -50,6 +43,7 @@ async function loadTafsir(tafsirId) {
   if (!TAFSIR_SOURCES[tafsirId]) throw new Error('تفسير غير معروف');
   if (_cache[tafsirId]) return _cache[tafsirId];
 
+  // 1. IndexedDB
   try {
     const cached = await DB.dbGet('tafsir', tafsirId);
     if (cached && cached.surahs && cached.surahs.length > 0) {
@@ -58,22 +52,24 @@ async function loadTafsir(tafsirId) {
     }
   } catch (e) {}
 
-  const baseName = TAFSIR_SOURCES[tafsirId].script;
-  const scriptPath = 'data/' + baseName + '.js';
+  const info = TAFSIR_SOURCES[tafsirId];
+  const baseName = info.script;
 
-  // حمّل السكربت
-  if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
-    console.log('📖 تحميل سكربت:', scriptPath);
-    await loadScript(scriptPath);
-    console.log('✓ تم تحميل السكربت');
+  // 2. إذا كان مضمّناً — حمّله من www/data
+  if (info.bundled) {
+    if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
+      await loadScript('data/' + baseName + '.js');
+    }
+  } else {
+    // 3. إذا لم يكن مضمّناً — تحقق من وجوده في المساحة المحلية
+    // (بعد تحميل الحزمة الإضافية)
+    if (!window.QURAN_DATA || !window.QURAN_DATA[baseName]) {
+      throw new Error('هذا التفسير يحتاج إلى تحميل حزمة البيانات الإضافية أولاً. اضغط على "تحميل التفاسير الإضافية" في الإعدادات.');
+    }
   }
 
   const b64 = window.QURAN_DATA && window.QURAN_DATA[baseName];
-  if (!b64) {
-    throw new Error('البيانات مفقودة: ' + baseName + ' (حجم: ' + (window.QURAN_DATA ? Object.keys(window.QURAN_DATA) : 'undefined') + ')');
-  }
-
-  console.log('📦 حجم base64:', (b64.length / 1024).toFixed(1), 'KB');
+  if (!b64) throw new Error('البيانات مفقودة: ' + baseName);
 
   const gzBytes = base64ToUint8(b64);
   let jsonStr;
@@ -102,8 +98,49 @@ function getVerseTafsir(tafsirData, surahNum, ayahNum) {
 
 async function getAvailableTafsirs() {
   return Object.entries(TAFSIR_SOURCES).map(([id, info]) => ({
-    id, name: info.name, downloaded: true,
+    id, name: info.name, bundled: info.bundled, downloaded: true,
   }));
+}
+
+// دالة تحميل الحزمة الإضافية
+async function downloadExtraData(onProgress) {
+  try {
+    if (onProgress) onProgress(0, 'جاري التحميل...');
+
+    const res = await fetch(REMOTE_DATA_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const buffer = await res.arrayBuffer();
+    if (onProgress) onProgress(50, 'جاري فك الضغط...');
+
+    // استخدم pako لفك ضغط ZIP (يحتاج مكتبة JSZip)
+    if (typeof JSZip === 'undefined') {
+      throw new Error('مكتبة JSZip غير محمّلة');
+    }
+
+    const zip = await JSZip.loadAsync(buffer);
+    const files = Object.keys(zip.files).filter(f => f.endsWith('.js'));
+    let processed = 0;
+
+    for (const filename of files) {
+      const content = await zip.files[filename].async('string');
+      // شغّل محتوى السكربت في السياق الحالي
+      const script = document.createElement('script');
+      script.textContent = content;
+      document.head.appendChild(script);
+      processed++;
+      if (onProgress) {
+        onProgress(50 + (processed / files.length) * 50, 
+                   `تم تحميل ${processed}/${files.length}`);
+      }
+    }
+
+    if (onProgress) onProgress(100, '✓ اكتمل التحميل');
+    return true;
+  } catch (e) {
+    console.error('فشل تحميل الحزمة الإضافية:', e);
+    throw e;
+  }
 }
 
 window.TafsirModule = {
@@ -111,4 +148,5 @@ window.TafsirModule = {
   load: loadTafsir,
   getVerse: getVerseTafsir,
   available: getAvailableTafsirs,
+  downloadExtra: downloadExtraData,
 };

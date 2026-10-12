@@ -554,6 +554,18 @@ function openSettingsNew() {
                onchange="setTajweed(this.checked)" style="width:20px;height:20px" />
         <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
       </div>
+      <div style="margin:1.5rem 0;padding:1rem;background:var(--verse-active);border-radius:8px;text-align:center">
+        <div style="margin-bottom:.5rem;font-weight:bold">📚 البيانات الإضافية</div>
+        <div style="font-size:.85rem;color:var(--text-2);margin-bottom:.75rem">
+          حمّل باقي التفاسير والترجمات (يحتاج إنترنت مرة واحدة)
+        </div>
+        <button onclick="downloadExtraData()" id="download-extra-btn"
+                style="width:100%;padding:.75rem;background:var(--gold);color:var(--green);border:none;border-radius:8px;font-size:1rem;font-family:inherit;cursor:pointer;font-weight:bold">
+          ⬇️ تحميل البيانات الإضافية
+        </button>
+        <div id="download-progress" style="margin-top:.5rem;font-size:.85rem;color:var(--text-2)"></div>
+      </div>
+
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
         <div>📊 <strong>إحصاءاتك:</strong></div>
         <div style="margin-top:.5rem">
