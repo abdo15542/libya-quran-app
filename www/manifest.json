@@ -1,0 +1,12 @@
+{
+  "name": "مصحف ليبيا — رواية قالون",
+  "short_name": "مصحف ليبيا",
+  "description": "المصحف الكريم برواية قالون عن نافع",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a3d2c",
+  "theme_color": "#0a3d2c"
+}

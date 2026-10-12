@@ -1,0 +1,9 @@
+{
+  "appId": "com.libya.quran",
+  "appName": "مصحف ليبيا",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
+  }
+}
