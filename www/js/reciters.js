@@ -1,13 +1,12 @@
-// ============ قائمة القراء — مصادر موثوقة (تُستخدم في التطبيقات العالمية) ============
+// ============ قائمة القراء ============
+// ملاحظة: هذا الملف الوحيد الذي يعرّف READERS
 
-const READERS = {
-  // كل الرابط بصيغة: {S} = 3 أرقام السورة، {A} = 3 أرقام الآية
-  
-  // ========== رواية قالون ==========
+window.READERS = {
+  // رواية قالون — per-ayah
   qaloon_husary: {
     name: 'الحصري (قالون)',
     country: '🌍 عالمي',
-    type: 'ayah',  // per-ayah
+    type: 'ayah',
     pattern: 'https://everyayah.com/data/Quran_qaloon/Abdul_Basit_Murattal_64kbps/{S}{A}.mp3',
   },
   qaloon_minshawi: {
@@ -17,7 +16,7 @@ const READERS = {
     pattern: 'https://everyayah.com/data/quran_qaloon/Minshawy_Murattal_128kbps/{S}{A}.mp3',
   },
   
-  // ========== رواية حفص (للمقارنة) ==========
+  // رواية حفص — per-ayah
   husary: {
     name: 'محمود خليل الحصري',
     country: '🌍 عالمي',
@@ -37,7 +36,7 @@ const READERS = {
     pattern: 'https://everyayah.com/data/Abdul_Basit_Murattal_192kbps/{S}{A}.mp3',
   },
   
-  // ========== سورة كاملة (سريع التحميل) ==========
+  // سورة كاملة — أسرع في التحميل
   full_husary: {
     name: 'الحصري (سورة كاملة)',
     country: '🌍 عالمي',
@@ -52,23 +51,15 @@ const READERS = {
   },
 };
 
-// بناء رابط الآية أو السورة
-function buildAudioUrl(readerKey, surahNum, ayahNum) {
-  const reader = READERS[readerKey];
+// بناء رابط السورة (سورة كاملة)
+function buildAudioUrl(readerKey, surahNum) {
+  const reader = window.READERS[readerKey];
   if (!reader) return null;
-  
   const S = String(surahNum).padStart(3, '0');
-  
-  if (reader.type === 'ayah') {
-    const A = String(ayahNum).padStart(3, '0');
-    return reader.pattern.replace('{S}', S).replace('{A}', A);
-  }
-  
-  // سورة كاملة
-  return reader.pattern.replace('{S}', S);
+  return reader.pattern.replace('{S}', S).replace('{A}', '001');
 }
 
 window.RecitersModule = {
-  readers: READERS,
+  readers: window.READERS,
   buildUrl: buildAudioUrl,
 };

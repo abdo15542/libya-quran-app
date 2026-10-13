@@ -12,39 +12,7 @@ let state = {
   reader: 'frgany',
 };
 
-const READERS = {
-  // ========== روابط Archive.org (موثوقة 100%) ==========
-  qariou: {
-    name: 'عبد الحميد القريو',
-    country: '🇱🇾 ليبيا',
-    pattern: 'https://archive.org/download/quran-by-abdelhamid-alqariou-qaloon/{s}.mp3',
-    fallback: null,
-  },
-  frgany: {
-    name: 'مصطفى الفرجاني',
-    country: '🇱🇾 ليبيا',
-    pattern: 'https://archive.org/download/mustafa-al-farghani-qaloon/{s}.mp3',
-    fallback: null,
-  },
-  doukkali: {
-    name: 'الدوكالي محمد العالم',
-    country: '🇱🇾 ليبيا',
-    pattern: 'https://archive.org/download/quran-qaloon-dokali/{s}.mp3',
-    fallback: null,
-  },
-  quniwa: {
-    name: 'محمد الأمين قنيوة',
-    country: '🇱🇾 ليبيا',
-    pattern: 'https://archive.org/download/quran-qaloon-quniwa/{s}.mp3',
-    fallback: null,
-  },
-  husary: {
-    name: 'محمود خليل الحصري',
-    country: '🌍 عالمي',
-    pattern: 'https://archive.org/download/quran-qaloon-husary/{s}.mp3',
-    fallback: 'https://server13.mp3quran.net/husr/{s}.mp3',
-  },
-};
+// READERS محمّلة من reciters.js
 
 // حالة الصوت
 let audioState = {
@@ -528,13 +496,13 @@ function applyFontSize() {
 
 // ==================== الصوت ====================
 function getAudioUrl(surahNum) {
-  const reader = READERS[state.reader] || READERS.qariou;
+  const reader = window.READERS[state.reader] || READERS.qariou;
   const padded = String(surahNum).padStart(3, '0');
   return reader.pattern.replace('{s}', padded);
 }
 
 function getAudioUrlFallback(surahNum) {
-  const reader = READERS[state.reader];
+  const reader = window.READERS[state.reader];
   if (!reader || !reader.fallback) return null;
   const padded = String(surahNum).padStart(3, '0');
   return reader.fallback.replace('{s}', padded);
@@ -707,7 +675,7 @@ function openNote() {
 }
 
 function openSettingsNew() {
-  const readerOptions = Object.entries(READERS).map(([k, v]) =>
+  const readerOptions = Object.entries(window.READERS).map(([k, v]) =>
     '<option value="' + k + '" ' + (state.reader === k ? 'selected' : '') + '>' +
     v.country + ' — ' + v.name + '</option>'
   ).join('');
