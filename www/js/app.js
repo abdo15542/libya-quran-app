@@ -755,6 +755,14 @@ function openSettingsNew() {
         <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
       </div>
 
+      <div style="margin-top:1rem;padding:1rem;background:var(--verse-active);border-radius:8px">
+        <div style="font-weight:bold;margin-bottom:.5rem">🧪 اختبار التشغيل</div>
+        <button onclick="testAllReaders()" style="width:100%;padding:.6rem;background:var(--gold);color:var(--green);border:none;border-radius:6px;font-family:inherit;font-size:.95rem;cursor:pointer;font-weight:bold">
+          اختبار جميع القراء
+        </button>
+        <div id="audio-test-results" style="margin-top:.75rem;font-size:.8rem;max-height:200px;overflow-y:auto"></div>
+      </div>
+
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
         <div>📊 <strong>إحصاءاتك:</strong></div>
         <div style="margin-top:.5rem">

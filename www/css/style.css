@@ -943,3 +943,11 @@ body {
 .verse-inline-actions button[data-act="play"]:hover {
   opacity: 0.9;
 }
+
+.test-line {
+  padding: .25rem .5rem;
+  border-bottom: 1px dashed var(--border);
+  font-family: monospace, system-ui;
+  direction: ltr;
+  text-align: left;
+}

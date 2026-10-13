@@ -16,7 +16,6 @@ const Audio = {
 
     const audio = new Audio();
     audio.preload = 'auto';
-    audio.crossOrigin = 'anonymous';
     audio.src = url;
 
     // ربط الأحداث
