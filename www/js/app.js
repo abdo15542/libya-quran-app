@@ -59,6 +59,7 @@ async function init() {
     status.textContent = 'جاهز!';
     document.getElementById('progress-fill').style.width = '100%';
     setTimeout(showApp, 400);
+    setTimeout(setupAutoUpdater, 3000);
   } catch (e) {
     document.getElementById('loading-status').textContent = 'خطأ: ' + e.message;
     console.error(e);

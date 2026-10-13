@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build APK + Update Bundle
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,18 +31,17 @@ jobs:
           packages: 'platform-tools'
           accept-android-sdk-licenses: true
 
-      - name: Accept Android SDK Licenses
+      - name: Accept SDK Licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Cache Gradle packages
+      - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -48,49 +49,60 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
-
-      - name: Verify web assets copied
+      - name: Force copy data
         run: |
-          echo "=== www/ ==="
-          ls -la www/
-          echo "=== www/data/ ==="
-          ls -la www/data/
-          echo "=== android assets (المصدر الرئيسي للـ APK) ==="
-          ls -la android/app/src/main/assets/public/ || echo "المجلد غير موجود!"
-          echo "=== android assets/data ==="
-          ls -la android/app/src/main/assets/public/data/ || echo "مجلد data غير موجود!"
-          echo "=== الحجم الإجمالي للأصول ==="
-          du -sh android/app/src/main/assets/public/ || echo "غير موجود"
+          mkdir -p android/app/src/main/assets/public/data
+          cp -v www/data/*.js android/app/src/main/assets/public/data/ 2>/dev/null || true
 
       - name: Build Debug APK
         working-directory: android
         run: |
+          chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -500
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -300
 
-      - name: Verify APK exists
+      - name: Build Update Bundle
         run: |
-          echo "=== البحث عن APK ==="
-          find android -name "*.apk" -type f
-          ls -la android/app/build/outputs/apk/debug/ 2>/dev/null || echo "مجلد APK غير موجود"
-          ls -la android/app/build/ 2>/dev/null || echo "مجلد build غير موجود"
+          cd www
+          zip -r ../bundle.zip . -q
+          cd ..
+          ls -lh bundle.zip
+          CHECKSUM=$(sha256sum bundle.zip | cut -d' ' -f1)
+          VERSION="1.0.${{ github.run_number }}"
+          cat > update.json << JSONEOF
+          {
+            "version": "$VERSION",
+            "url": "https://github.com/abdo15542/libya-quran-app/releases/download/latest/bundle.zip",
+            "checksum": "$CHECKSUM"
+          }
+          JSONEOF
+          cat update.json
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Delete old latest release
+        continue-on-error: true
+        run: gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create/Update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "أحدث إصدار — ${{ env.VERSION }}"
+          body: |
+            🎉 تحديث تلقائي جديد
+            الإصدار: ${{ env.VERSION }}
+          files: |
+            bundle.zip
+            update.json
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: libya-quran-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
-      - name: Upload Build Reports on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-reports
-          path: |
-            android/app/build/reports/
-            android/build/reports/
-          if-no-files-found: ignore

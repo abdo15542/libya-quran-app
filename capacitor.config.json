@@ -2,8 +2,16 @@
   "appId": "com.libya.quran",
   "appName": "مصحف ليبيا",
   "webDir": "www",
-  "android": {
-    "allowMixedContent": true,
-    "webContentsDebuggingEnabled": true
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "updateUrl": "https://github.com/abdo15542/libya-quran-app/releases/latest/download/update.json",
+      "resetWhenUpdate": false,
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "responseTimeout": 30,
+      "allowModifyUrl": true,
+      "statsUrl": ""
+    }
   }
 }
