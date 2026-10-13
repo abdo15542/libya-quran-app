@@ -59,7 +59,10 @@ async function init() {
     status.textContent = 'جاهز!';
     document.getElementById('progress-fill').style.width = '100%';
     setTimeout(showApp, 400);
-    setTimeout(setupAutoUpdater, 3000);
+    // التحديث التلقائي (بعد التحميل)
+    setTimeout(function() {
+      if (typeof setupAutoUpdater === 'function') setupAutoUpdater();
+    }, 3000);
   } catch (e) {
     document.getElementById('loading-status').textContent = 'خطأ: ' + e.message;
     console.error(e);
@@ -759,6 +762,66 @@ window.setViewMode = setViewMode;
 window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.showVerseTafsir = showVerseTafsir;
 window.showVerseTranslation = showVerseTranslation;
+
+// ==================== التحديث التلقائي ====================
+async function setupAutoUpdater() {
+  if (!window.Capacitor || !Capacitor.Plugins) return;
+  const { CapacitorUpdater } = Capacitor.Plugins;
+  if (!CapacitorUpdater) {
+    console.log('Updater: غير متوفر');
+    return;
+  }
+
+  try {
+    CapacitorUpdater.addListener('download', (info) => {
+      const pct = Math.round(info.percent || 0);
+      console.log('📥 التحديث:', pct + '%');
+      showUpdateToast('📥 تحديث جديد: ' + pct + '%');
+    });
+
+    CapacitorUpdater.addListener('downloadComplete', () => {
+      console.log('✅ اكتمل تحميل التحديث');
+      showUpdateToast('✅ اكتمل التحميل — إعادة التشغيل...');
+    });
+
+    CapacitorUpdater.addListener('updateFailed', (info) => {
+      console.warn('⚠ فشل:', info);
+    });
+
+    CapacitorUpdater.addListener('updateAvailable', async (info) => {
+      console.log('🎉 تحديث جديد:', info);
+      showUpdateToast('🎉 يُطبَّق التحديث...');
+      try {
+        await CapacitorUpdater.next({ id: info.bundle.id });
+        setTimeout(() => CapacitorUpdater.reload(), 1500);
+      } catch (e) {
+        console.warn('reload:', e);
+      }
+    });
+
+    const result = await CapacitorUpdater.download();
+    console.log('فحص التحديثات:', result);
+  } catch (e) {
+    console.warn('Updater error:', e.message);
+  }
+}
+
+function showUpdateToast(msg) {
+  let toast = document.getElementById('update-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'update-toast';
+    toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);' +
+      'background:#0a3d2c;color:#c9a961;padding:.75rem 1.25rem;border-radius:25px;' +
+      'font-family:inherit;font-size:.95rem;box-shadow:0 4px 15px rgba(0,0,0,.3);' +
+      'z-index:99999;transition:opacity .3s;opacity:0;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+}
 
 // ==================== Service Worker ====================
 if ('serviceWorker' in navigator) {
