@@ -790,6 +790,15 @@ window.setTajweed = setTajweed;
 window.setViewMode = setViewMode;
 window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.showVerseTafsir = showVerseTafsir;
+window.openMemoSection = openMemoSection;
+window.startReviewSession = startReviewSession;
+window.revealVerse = revealVerse;
+window.answerReview = answerReview;
+window.skipReview = skipReview;
+window.showAddVerseDialog = showAddVerseDialog;
+window.doAddVerse = doAddVerse;
+window.showMemoStats = showMemoStats;
+window.showMemorizedList = showMemorizedList;
 window.showVerseTranslation = showVerseTranslation;
 
 // ==================== نظام التحديث مع إشعارات ====================
@@ -975,6 +984,250 @@ function showUpdateBanner(version) {
     style.textContent = '@keyframes slideUp{from{transform:translateY(100px);opacity:0}to{transform:translateY(0);opacity:1}}';
     document.head.appendChild(style);
   }
+}
+
+
+// ==================== قسم الحفظ ====================
+let _reviewQueue = [];
+let _reviewCurrentIdx = 0;
+let _reviewSessionStats = { easy: 0, medium: 0, hard: 0 };
+
+async function openMemoSection() {
+  const stats = await MemoModule.stats();
+
+  const html = `
+    <div class="memo-section">
+      <div class="memo-stats-grid">
+        <div class="memo-stat-card">
+          <div class="memo-stat-num">${stats.total}</div>
+          <div class="memo-stat-label">✅ محفوظ</div>
+        </div>
+        <div class="memo-stat-card ${stats.dueToday > 0 ? 'highlight' : ''}">
+          <div class="memo-stat-num">${stats.dueToday}</div>
+          <div class="memo-stat-label">⏰ للمراجعة</div>
+        </div>
+        <div class="memo-stat-card">
+          <div class="memo-stat-num">${stats.streak}</div>
+          <div class="memo-stat-label">🔥 سلسلة (يوم)</div>
+        </div>
+      </div>
+
+      <div class="memo-progress-bar">
+        <div class="memo-progress-fill" style="width:${stats.todayProgress}%"></div>
+      </div>
+      <div class="memo-progress-label">تقدم اليوم: ${stats.reviewedToday}/${stats.reviewedToday + stats.dueToday} آية</div>
+
+      <div class="memo-actions">
+        <button class="memo-btn-primary" onclick="startReviewSession()" ${stats.dueToday === 0 ? 'disabled' : ''}>
+          ${stats.dueToday > 0 ? '▶ ابدأ المراجعة (' + stats.dueToday + ')' : '✅ لا توجد مراجعات اليوم'}
+        </button>
+        <button class="memo-btn-secondary" onclick="showAddVerseDialog()">➕ إضافة آية للحفظ</button>
+        <button class="memo-btn-secondary" onclick="showMemoStats()">📊 تفاصيل الإحصائيات</button>
+        <button class="memo-btn-secondary" onclick="showMemorizedList()">📖 قائمة المحفوظات (${stats.total})</button>
+      </div>
+    </div>
+  `;
+  openModal('📚 قسم الحفظ', html);
+}
+
+async function startReviewSession() {
+  const due = await MemoModule.dueToday();
+  if (!due.length) {
+    return openModal('✅ ممتاز!', 'لا توجد آيات للمراجعة الآن. عد لاحقاً.');
+  }
+
+  _reviewQueue = due;
+  _reviewCurrentIdx = 0;
+  _reviewSessionStats = { easy: 0, medium: 0, hard: 0 };
+
+  showReviewCard();
+}
+
+function showReviewCard() {
+  if (_reviewCurrentIdx >= _reviewQueue.length) {
+    return showSessionComplete();
+  }
+
+  const item = _reviewQueue[_reviewCurrentIdx];
+  const surah = state.data?.surahs?.[item.s - 1];
+  const verse = surah?.verses?.find(v => v.number === item.a);
+  if (!verse) { _reviewCurrentIdx++; return showReviewCard(); }
+
+  const progress = `(${_reviewCurrentIdx + 1}/${_reviewQueue.length})`;
+  const levelName = MemoModule.levelNames[item.level] || 'جديد';
+
+  const html = `
+    <div class="review-session">
+      <div class="review-header">
+        <span>${progress}</span>
+        <span class="review-level">المرحلة: ${levelName}</span>
+      </div>
+
+      <div class="review-surah">سورة ${surah.name} — آية ${item.a}</div>
+
+      <div class="review-verse-box" id="review-verse-box">
+        <div class="review-verse-text hidden-verse" id="review-text">
+          ${(verse.text || '').split(/\s+/).map(function(w) {
+            return '<span class="w">' + w + '</span>';
+          }).join(' ')}
+        </div>
+        <button class="review-reveal-btn" id="reveal-btn" onclick="revealVerse()">👁️ إظهار</button>
+      </div>
+
+      <div class="review-buttons hidden" id="review-buttons">
+        <div class="review-question">كيف كان أداؤك؟</div>
+        <button class="review-btn hard" onclick="answerReview('hard')">
+          <span>😰</span>
+          <div>صعب</div>
+          <div class="review-btn-sub">إعادة قريباً</div>
+        </button>
+        <button class="review-btn medium" onclick="answerReview('medium')">
+          <span>🙂</span>
+          <div>متوسط</div>
+          <div class="review-btn-sub">نفس المرحلة</div>
+        </button>
+        <button class="review-btn easy" onclick="answerReview('easy')">
+          <span>😎</span>
+          <div>سهل</div>
+          <div class="review-btn-sub">تقدّم سريع</div>
+        </button>
+      </div>
+
+      <button class="review-skip-btn" onclick="skipReview()">تخطي هذه المرة</button>
+    </div>
+  `;
+  openModal('📚 جلسة المراجعة', html);
+}
+
+function revealVerse() {
+  const text = document.getElementById('review-text');
+  const btn = document.getElementById('reveal-btn');
+  const buttons = document.getElementById('review-buttons');
+  if (text) text.classList.remove('hidden-verse');
+  if (btn) btn.style.display = 'none';
+  if (buttons) buttons.classList.remove('hidden');
+}
+
+async function answerReview(difficulty) {
+  const item = _reviewQueue[_reviewCurrentIdx];
+  const result = await MemoModule.review(item.s, item.a, difficulty);
+  _reviewSessionStats[difficulty]++;
+
+  const msg = difficulty === 'easy'
+    ? '✅ ممتاز! المراجعة القادمة بعد ' + result.nextInDays + ' يوم'
+    : difficulty === 'medium'
+      ? '👍 جيد! راجع مجدداً بعد ' + result.nextInDays + ' يوم'
+      : '💪 لا بأس، أعِد المراجعة بعد ' + result.nextInDays + ' يوم';
+
+  showUpdateToast(msg);
+  _reviewCurrentIdx++;
+  setTimeout(showReviewCard, 800);
+}
+
+function skipReview() {
+  _reviewCurrentIdx++;
+  showReviewCard();
+}
+
+function showSessionComplete() {
+  const total = _reviewSessionStats.easy + _reviewSessionStats.medium + _reviewSessionStats.hard;
+  const html = `
+    <div class="session-complete">
+      <div class="session-complete-icon">🎉</div>
+      <h3>أحسنت! اكتملت الجلسة</h3>
+      <div class="session-stats">
+        <div class="session-stat">
+          <div class="stat-num easy">${_reviewSessionStats.easy}</div>
+          <div class="stat-label">سهل 😎</div>
+        </div>
+        <div class="session-stat">
+          <div class="stat-num medium">${_reviewSessionStats.medium}</div>
+          <div class="stat-label">متوسط 🙂</div>
+        </div>
+        <div class="session-stat">
+          <div class="stat-num hard">${_reviewSessionStats.hard}</div>
+          <div class="stat-label">صعب 😰</div>
+        </div>
+      </div>
+      <div class="session-total">مراجعة ${total} آية</div>
+      <button class="memo-btn-primary" onclick="closeModal()">إغلاق</button>
+    </div>
+  `;
+  openModal('🎉 اكتمل', html);
+}
+
+function showAddVerseDialog() {
+  const surah = state.data?.surahs?.[state.currentSurah - 1];
+  const max = surah?.verses?.length || 1;
+
+  const html = `
+    <div class="add-memo-dialog">
+      <p>أضف آية من <strong>سورة ${surah?.name || ''}</strong> إلى قائمة الحفظ:</p>
+      <label>رقم الآية (1 - ${max}):</label>
+      <input type="number" id="add-memo-ayah" min="1" max="${max}" value="1" class="memo-input" />
+      <button class="memo-btn-primary" onclick="doAddVerse()">➕ إضافة</button>
+    </div>
+  `;
+  openModal('➕ إضافة للحفظ', html);
+}
+
+async function doAddVerse() {
+  const a = +document.getElementById('add-memo-ayah').value;
+  if (!a || a < 1) return;
+  const r = await MemoModule.addVerse(state.currentSurah, a);
+  if (r.ok) {
+    showUpdateToast('✅ تمت إضافة الآية — راجعها غداً');
+    closeModal();
+  } else {
+    showUpdateToast('⚠ ' + r.msg);
+  }
+}
+
+async function showMemoStats() {
+  const s = await MemoModule.stats();
+  const html = `
+    <div class="memo-stats-detail">
+      <div class="stat-row"><span>📚 إجمالي المحفوظ</span><strong>${s.total} آية</strong></div>
+      <div class="stat-row"><span>⏰ للمراجعة اليوم</span><strong>${s.dueToday}</strong></div>
+      <div class="stat-row"><span>✅ راجعتها اليوم</span><strong>${s.reviewedToday}</strong></div>
+      <div class="stat-row"><span>🎯 مُتقن (مستوى أعلى)</span><strong>${s.mastered}</strong></div>
+      <div class="stat-row"><span>📖 قيد التعلم</span><strong>${s.learning}</strong></div>
+      <div class="stat-row"><span>🔄 إجمالي المراجعات</span><strong>${s.totalReviews}</strong></div>
+      <div class="stat-row"><span>📗 سور متضمنة</span><strong>${s.surahs}</strong></div>
+      <div class="stat-row highlight-row"><span>🔥 سلسلة الأيام</span><strong>${s.streak} يوم</strong></div>
+    </div>
+  `;
+  openModal('📊 إحصائيات الحفظ', html);
+}
+
+async function showMemorizedList() {
+  const data = await MemoModule.getData();
+  const items = Object.entries(data)
+    .filter(([, v]) => v.memorized)
+    .map(([k, v]) => {
+      const [s, a] = k.split(':').map(Number);
+      return { s, a, ...v };
+    })
+    .sort((x, y) => x.s - y.s || x.a - y.a);
+
+  if (!items.length) {
+    return openModal('📖 قائمة المحفوظات', 'لم تحفظ أي آية بعد. اضغط ➕ لإضافة آية.');
+  }
+
+  const html = items.map(it => {
+    const surah = state.surahsMeta.find(x => x.n === it.s);
+    const levelName = MemoModule.levelNames[it.level] || 'جديد';
+    return `
+      <div class="memo-list-item" onclick="goToVerse(${it.s}, ${it.a})">
+        <div class="memo-item-header">
+          <span>${surah?.name || 'سورة'} — آية ${it.a}</span>
+          <span class="memo-item-level">${levelName}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  openModal('📖 قائمة المحفوظات', '<div class="memo-list">' + html + '</div>');
 }
 
 // ==================== Service Worker ====================
