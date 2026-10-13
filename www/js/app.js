@@ -13,9 +13,40 @@ let state = {
 };
 
 const READERS = {
-  frgany:  { name: 'مصطفى الفرجاني', url: 'https://server8.mp3quran.net/frgany/' },
-  quniwa:  { name: 'محمد الأمين قنيوة', url: 'https://server8.mp3quran.net/quniwa/' },
-  daoub:   { name: 'طارق دعوب', url: 'https://server8.mp3quran.net/daoub/' },
+  qariou: {
+    name: 'عبد الحميد القريو',
+    country: '🇱🇾 ليبيا',
+    pattern: 'https://quranupload.server.ly/grew/{s}.mp3',
+    fallback: 'https://worker4annotation.saleh-ayari.workers.dev/reciters/Abdel_Hamid_Al_Qariou/{s}.mp3',
+  },
+  doukkali: {
+    name: 'الدوكالي محمد العالم',
+    country: '🇱🇾 ليبيا',
+    pattern: 'https://quranupload.server.ly/Genewa/{s}.mp3',
+  },
+  frgany: {
+    name: 'مصطفى الفرجاني',
+    country: '🇱🇾 ليبيا',
+    pattern: 'https://server8.mp3quran.net/frgany/{s}.mp3',
+  },
+  quniwa: {
+    name: 'محمد الأمين قنيوة',
+    country: '🇱🇾 ليبيا',
+    pattern: 'https://server8.mp3quran.net/quniwa/{s}.mp3',
+  },
+  daoub: {
+    name: 'طارق دعوب',
+    country: '🇱🇾 ليبيا',
+    pattern: 'https://server8.mp3quran.net/daoub/{s}.mp3',
+  },
+};
+
+// حالة الصوت
+let audioState = {
+  isPlaying: false,
+  currentSurah: null,
+  currentUrl: null,
+  isBuffering: false,
 };
 
 // ==================== التهيئة ====================
@@ -200,6 +231,7 @@ function renderSurah(num) {
       <div class="verse-inline-actions hidden">
         <button data-act="tafsir" type="button">📖 تفسير</button>
         <button data-act="translation" type="button">🌐 ترجمة</button>
+        <button data-act="play" type="button">🎧 تشغيل من هنا</button>
         <button data-act="bookmark" type="button">${isBookmarked ? '🔖 إزالة' : '🔖 علامة'}</button>
         <button data-act="note" type="button">📝 ملاحظة</button>
         <button data-act="close" type="button" class="inline-close">✕</button>
@@ -214,6 +246,7 @@ function renderSurah(num) {
         const act = btn.dataset.act;
         if (act === 'tafsir')            toggleInlineTafsir(num, v.number, div);
         else if (act === 'translation')  toggleInlineTranslation(num, v.number, div);
+        else if (act === 'play')         playSurahFromVerse(num, v.number);
         else if (act === 'bookmark')     toggleVerseBookmarkInline(num, v.number, div);
         else if (act === 'note')         openVerseNoteInline(num, v.number, div);
         else if (act === 'close')        closeVerseInline(div);
@@ -251,6 +284,25 @@ function toggleInlineActions(verseEl) {
     if (el !== actions) el.classList.add('hidden');
   });
   actions.classList.toggle('hidden');
+}
+
+function playSurahFromVerse(surahNum, ayahNum) {
+  // شغّل السورة كاملة من البداية
+  if (state.currentSurah !== surahNum) {
+    state.currentSurah = surahNum;
+  }
+
+  const url = getAudioUrl(surahNum);
+  Audio.setRepeat(1);
+  Audio.play(url);
+
+  audioState.isPlaying = true;
+  audioState.currentSurah = surahNum;
+
+  const btn = document.getElementById('play-btn');
+  if (btn) btn.textContent = '⏸ إيقاف';
+
+  showUpdateToast('🎧 جاري تشغيل سورة ' + (state.data?.surahs?.[surahNum - 1]?.name || ''));
 }
 
 function closeVerseInline(verseEl) {
@@ -470,32 +522,127 @@ function applyFontSize() {
 }
 
 // ==================== الصوت ====================
-let isPlaying = false;
 function getAudioUrl(surahNum) {
-  const reader = READERS[state.reader] || READERS.frgany;
-  return reader.url + String(surahNum).padStart(3, '0') + '.mp3';
+  const reader = READERS[state.reader] || READERS.qariou;
+  const padded = String(surahNum).padStart(3, '0');
+  return reader.pattern.replace('{s}', padded);
 }
-function togglePlay() {
+
+function getAudioUrlFallback(surahNum) {
+  const reader = READERS[state.reader];
+  if (!reader || !reader.fallback) return null;
+  const padded = String(surahNum).padStart(3, '0');
+  return reader.fallback.replace('{s}', padded);
+}
+
+async function togglePlay() {
   const btn = document.getElementById('play-btn');
   if (!window.Audio) return;
-  if (isPlaying) {
+
+  if (audioState.isPlaying) {
     Audio.pause();
     if (btn) btn.textContent = '▶ تشغيل';
-    isPlaying = false;
+    audioState.isPlaying = false;
   } else {
+    const url = getAudioUrl(state.currentSurah);
+    const fallbackUrl = getAudioUrlFallback(state.currentSurah);
+
     Audio.setRepeat(1);
-    Audio.play(getAudioUrl(state.currentSurah));
-    if (btn) btn.textContent = '⏸ إيقاف';
-    isPlaying = true;
+
+    // حاول التشغيل من الرابط الأساسي
+    try {
+      const player = Audio.load(url);
+      const fallback = fallbackUrl;
+
+      // مستمع لخطأ التحميل — جرّب الرابط البديل
+      if (player && fallback) {
+        player.once('loaderror', function() {
+          console.log('⚠ فشل الرابط الأساسي، تجربة البديل...');
+          Audio.load(fallback);
+          Audio.play(fallback);
+        });
+      }
+
+      Audio.play(url);
+      if (btn) btn.textContent = '⏸ إيقاف';
+      audioState.isPlaying = true;
+      audioState.currentSurah = state.currentSurah;
+      audioState.currentUrl = url;
+    } catch (e) {
+      console.warn('فشل تشغيل الصوت:', e);
+      if (btn) btn.textContent = '▶ تشغيل';
+    }
   }
 }
+
+// عند انتهاء التلاوة
 window.addEventListener('audio-ended', () => {
   const btn = document.getElementById('play-btn');
   if (btn) btn.textContent = '▶ تشغيل';
-  isPlaying = false;
+  audioState.isPlaying = false;
 });
 
-// ==================== شريط الأدوات العلوي ====================
+// ==================== تحميل السورة أوفلاين ====================
+async function downloadCurrentSurah() {
+  const url = getAudioUrl(state.currentSurah);
+  const surah = state.data?.surahs?.[state.currentSurah - 1];
+  const name = surah?.name || 'السورة';
+
+  showUpdateToast('📥 جاري تحميل سورة ' + name + '...');
+
+  try {
+    const cache = await caches.open('libya-quran-audio-v1');
+    const cached = await cache.match(url);
+
+    if (cached) {
+      showUpdateToast('✅ السورة محمّلة مسبقاً');
+      return;
+    }
+
+    await cache.add(url);
+    showUpdateToast('✅ تم تحميل سورة ' + name + ' — يمكنك تشغيلها بدون إنترنت');
+  } catch (e) {
+    console.warn('فشل تحميل السورة:', e);
+    showUpdateToast('❌ فشل التحميل: ' + e.message);
+  }
+}
+
+// فحص إذا كانت السورة محمّلة
+async function isSurahDownloaded(surahNum) {
+  try {
+    const url = getAudioUrl(surahNum);
+    const cache = await caches.open('libya-quran-audio-v1');
+    const cached = await cache.match(url);
+    return !!cached;
+  } catch (e) {
+    return false;
+  }
+}
+
+// حذف السورة المحمّلة
+async function deleteSurahDownload(surahNum) {
+  try {
+    const url = getAudioUrl(surahNum);
+    const cache = await caches.open('libya-quran-audio-v1');
+    await cache.delete(url);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// إحصاءات الصوت المحمّل
+async function getAudioCacheStats() {
+  try {
+    const cache = await caches.open('libya-quran-audio-v1');
+    const keys = await cache.keys();
+    return { count: keys.length };
+  } catch (e) {
+    return { count: 0 };
+  }
+}
+
+// ==================== شريط الأدوات العلوي ====================// ==================== شريط الأدوات العلوي ====================
 function handleToolbar(action) {
   const surah = state.data?.surahs?.[state.currentSurah - 1];
   const totalAyahs = surah?.verses?.length || 1;
@@ -570,24 +717,34 @@ function openNote() {
 }
 
 function openSettingsNew() {
+  const readerOptions = Object.entries(READERS).map(([k, v]) =>
+    '<option value="' + k + '" ' + (state.reader === k ? 'selected' : '') + '>' +
+    v.country + ' — ' + v.name + '</option>'
+  ).join('');
+
   const html = `
     <div class="settings">
       <label>حجم الخط</label>
       <input type="range" min="1.2" max="2.4" step="0.1" value="${state.fontSize}"
              oninput="setFontSize(this.value)" />
-      <label>القارئ</label>
+
+      <label>🎧 القارئ</label>
       <select onchange="setReader(this.value)">
-        ${Object.entries(READERS).map(([k, v]) =>
-          `<option value="${k}" ${state.reader===k?'selected':''}>${v.name}</option>`
-        ).join('')}
+        ${readerOptions}
       </select>
+
+      <div class="audio-stats-box" id="audio-stats-box">
+        📊 جاري حساب الملفات الصوتية المحمّلة...
+      </div>
+
       <label>التلوين التجويدي</label>
       <div style="display:flex;gap:.5rem;align-items:center;margin:.5rem 0">
         <input type="checkbox" id="tajweed-check" ${window.Tajweed && Tajweed.isEnabled()?'checked':''}
                onchange="setTajweed(this.checked)" style="width:20px;height:20px" />
         <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
       </div>
-<div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
+
+      <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
         <div>📊 <strong>إحصاءاتك:</strong></div>
         <div style="margin-top:.5rem">
           ✅ آيات محفوظة: ${Object.values(state.progress).filter(p=>p.memorized).length}<br>
@@ -599,7 +756,16 @@ function openSettingsNew() {
     </div>
   `;
   openModal('⚙️ الإعدادات', html);
+
+  // حدّث إحصاءات الصوت بشكل غير متزامن
+  getAudioCacheStats().then(s => {
+    const box = document.getElementById('audio-stats-box');
+    if (box) {
+      box.innerHTML = '🎧 سور محمّلة للاستماع بدون إنترنت: <strong>' + s.count + '</strong>';
+    }
+  });
 }
+
 
 function setFontSize(v) {
   state.fontSize = parseFloat(v);
@@ -791,6 +957,10 @@ window.setViewMode = setViewMode;
 window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.showVerseTafsir = showVerseTafsir;
 window.openMemoSection = openMemoSection;
+window.downloadCurrentSurah = downloadCurrentSurah;
+window.isSurahDownloaded = isSurahDownloaded;
+window.deleteSurahDownload = deleteSurahDownload;
+window.getAudioCacheStats = getAudioCacheStats;
 window.startReviewSession = startReviewSession;
 window.revealVerse = revealVerse;
 window.answerReview = answerReview;

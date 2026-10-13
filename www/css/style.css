@@ -910,3 +910,36 @@ body {
   padding: .15rem .5rem;
   border-radius: 10px;
 }
+
+/* ========== شريط الصوت ========== */
+.audio-stats-box {
+  padding: .75rem;
+  background: var(--verse-active);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  font-size: .9rem;
+  margin: .75rem 0;
+  text-align: center;
+  color: var(--text);
+}
+
+.audio-stats-box strong {
+  color: var(--green);
+  font-family: system-ui, sans-serif;
+}
+
+[data-theme="dark"] .audio-stats-box strong {
+  color: var(--gold);
+}
+
+/* زر التشغيل من داخل قائمة الآية */
+.verse-inline-actions button[data-act="play"] {
+  background: linear-gradient(135deg, var(--green), var(--green-light));
+  color: var(--gold);
+  border-color: var(--green);
+  font-weight: bold;
+}
+
+.verse-inline-actions button[data-act="play"]:hover {
+  opacity: 0.9;
+}
