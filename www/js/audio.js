@@ -1,6 +1,6 @@
-// ============ مشغل صوت HTML5 أصلي (بديل Howler) ============
+// ============ مشغل صوت HTML5 أصلي ============
 
-const Audio = {
+const QuranAudio = {
   player: null,
   currentSrc: null,
   repeatTarget: 0,
@@ -8,19 +8,18 @@ const Audio = {
   _listeners: {},
 
   load(url) {
-    // أوقف المشغل السابق
     if (this.player) {
       try { this.player.pause(); } catch (e) {}
       this.player = null;
     }
 
-    const audio = new Audio();
+    const audio = new Audio();  // ← Audio الأصلي الآن (لأننا سمّينا كائننا QuranAudio)
     audio.preload = 'auto';
     audio.src = url;
+    // لا نضع crossOrigin (يسبب مشاكل CORS)
 
-    // ربط الأحداث
     audio.onended = () => this._onEnd();
-    audio.onerror = (e) => {
+    audio.onerror = () => {
       console.warn('❌ خطأ الصوت:', url, audio.error?.code);
       this._emit('error', { url, error: audio.error });
     };
@@ -38,7 +37,6 @@ const Audio = {
   async play(url) {
     if (!url) return;
 
-    // إذا كان نفس الرابط ويعمل حالياً
     if (this.currentSrc === url && this.player) {
       try { await this.player.play(); return; } catch (e) {}
     }
@@ -103,7 +101,6 @@ const Audio = {
     this._listeners[event] = this._listeners[event].filter(x => x !== cb);
   },
 
-  // إزالة مستمعي "مرة واحدة"
   once(event, cb) {
     const wrapper = (data) => {
       cb(data);
@@ -113,4 +110,4 @@ const Audio = {
   },
 };
 
-window.Audio = Audio;
+window.QuranAudio = QuranAudio;

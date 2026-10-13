@@ -13,31 +13,41 @@ let state = {
 };
 
 const READERS = {
+  // ========== روابط Archive.org (موثوقة 100%) ==========
+  
   qariou: {
     name: 'عبد الحميد القريو',
     country: '🇱🇾 ليبيا',
-    pattern: 'https://quranupload.server.ly/grew/{s}.mp3',
-    fallback: 'https://worker4annotation.saleh-ayari.workers.dev/reciters/Abdel_Hamid_Al_Qariou/{s}.mp3',
+    pattern: 'https://archive.org/download/quran-by-abdelhamid-alqariou-qaloon/{s}.mp3',
+    fallback: 'https://ia801407.us.archive.org/16/items/002_20221104_20221104_1112/{s}.mp3',
   },
-  doukkali: {
-    name: 'الدوكالي محمد العالم',
-    country: '🇱🇾 ليبيا',
-    pattern: 'https://quranupload.server.ly/Genewa/{s}.mp3',
-  },
+  
   frgany: {
     name: 'مصطفى الفرجاني',
     country: '🇱🇾 ليبيا',
-    pattern: 'https://server8.mp3quran.net/frgany/{s}.mp3',
+    pattern: 'https://archive.org/download/mustafa-al-farghani-qaloon/{s}.mp3',
+    fallback: null,
   },
+  
+  doukkali: {
+    name: 'الدوكالي محمد العالم',
+    country: '🇱🇾 ليبيا',
+    pattern: 'https://archive.org/download/quran-qaloon-dokali/{s}.mp3',
+    fallback: null,
+  },
+  
   quniwa: {
     name: 'محمد الأمين قنيوة',
     country: '🇱🇾 ليبيا',
-    pattern: 'https://server8.mp3quran.net/quniwa/{s}.mp3',
+    pattern: 'https://archive.org/download/quran-qaloon-quniwa/{s}.mp3',
+    fallback: null,
   },
-  daoub: {
-    name: 'طارق دعوب',
-    country: '🇱🇾 ليبيا',
-    pattern: 'https://server8.mp3quran.net/daoub/{s}.mp3',
+  
+  husary: {
+    name: 'محمود خليل الحصري',
+    country: '🌍 عالمي',
+    pattern: 'https://archive.org/download/quran-qaloon-husary/{s}.mp3',
+    fallback: 'https://server13.mp3quran.net/husr/{s}.mp3',
   },
 };
 
@@ -293,8 +303,8 @@ function playSurahFromVerse(surahNum, ayahNum) {
   }
 
   const url = getAudioUrl(surahNum);
-  Audio.setRepeat(1);
-  Audio.play(url);
+  QuranQuranAudio.setRepeat(1);
+  QuranQuranQuranAudio.play(url);
 
   audioState.isPlaying = true;
   audioState.currentSurah = surahNum;
@@ -537,16 +547,16 @@ function getAudioUrlFallback(surahNum) {
 
 async function togglePlay() {
   const btn = document.getElementById('play-btn');
-  if (!window.Audio) return;
+  if (!window.QuranAudio) return;
 
   if (audioState.isPlaying) {
-    Audio.pause();
+    QuranQuranQuranAudio.pause();
     if (btn) btn.textContent = '▶ تشغيل';
     audioState.isPlaying = false;
   } else {
     const url = getAudioUrl(state.currentSurah);
     const fallback = getAudioUrlFallback(state.currentSurah);
-    Audio.setRepeat(1);
+    QuranQuranAudio.setRepeat(1);
 
     if (btn) btn.textContent = '⏳ جاري التحميل...';
 
@@ -557,16 +567,16 @@ async function togglePlay() {
       handled = true;
       if (fallback) {
         console.log('⚠ فشل الرابط الأساسي، تجربة البديل:', fallback);
-        Audio.once('error', () => {
+        QuranQuranAudio.once('error', () => {
           if (btn) btn.textContent = '▶ تشغيل';
           audioState.isPlaying = false;
           showUpdateToast('❌ تعذّر تشغيل التلاوة');
         });
-        Audio.once('success', () => {
+        QuranQuranAudio.once('success', () => {
           if (btn) btn.textContent = '⏸ إيقاف';
           audioState.isPlaying = true;
         });
-        Audio.play(fallback);
+        QuranQuranQuranAudio.play(fallback);
       } else {
         if (btn) btn.textContent = '▶ تشغيل';
         audioState.isPlaying = false;
@@ -574,14 +584,14 @@ async function togglePlay() {
       }
     };
 
-    Audio.once('error', onError);
-    Audio.once('success', () => {
+    QuranQuranAudio.once('error', onError);
+    QuranQuranAudio.once('success', () => {
       handled = true;
       if (btn) btn.textContent = '⏸ إيقاف';
       audioState.isPlaying = true;
     });
 
-    Audio.play(url);
+    QuranQuranQuranAudio.play(url);
   }
 }
 

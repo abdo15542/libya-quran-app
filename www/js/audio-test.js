@@ -76,7 +76,7 @@ function updateTestUI(lines) {
 async function playTestUrl(url) {
   try {
     showUpdateToast('🎧 جاري التشغيل...');
-    await Audio.play(url);
+    await QuranQuranAudio.play(url);
     showUpdateToast('✅ يعمل!');
   } catch (e) {
     showUpdateToast('❌ ' + e.message);
