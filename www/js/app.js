@@ -13,11 +13,12 @@ let state = {
 };
 
 const READERS = {
+  // ========== روابط Archive.org (موثوقة 100%) ==========
   qariou: {
     name: 'عبد الحميد القريو',
     country: '🇱🇾 ليبيا',
     pattern: 'https://archive.org/download/quran-by-abdelhamid-alqariou-qaloon/{s}.mp3',
-    fallback: 'https://ia801407.us.archive.org/16/items/002_20221104_20221104_1112/{s}.mp3',
+    fallback: null,
   },
   frgany: {
     name: 'مصطفى الفرجاني',
