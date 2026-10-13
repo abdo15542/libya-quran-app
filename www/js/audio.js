@@ -1,35 +1,116 @@
+// ============ مشغل صوت HTML5 أصلي (بديل Howler) ============
+
 const Audio = {
   player: null,
   currentSrc: null,
-  repeatCount: 0,
   repeatTarget: 0,
+  repeatCount: 0,
+  _listeners: {},
 
   load(url) {
-    if (this.player) this.player.unload();
-    this.player = new Howl({
-      src: [url],
-      html5: true,
-      onend: () => this.onEnd(),
-      onloaderror: () => console.warn('خطأ تحميل الصوت'),
-    });
+    // أوقف المشغل السابق
+    if (this.player) {
+      try { this.player.pause(); } catch (e) {}
+      this.player = null;
+    }
+
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous';
+    audio.src = url;
+
+    // ربط الأحداث
+    audio.onended = () => this._onEnd();
+    audio.onerror = (e) => {
+      console.warn('❌ خطأ الصوت:', url, audio.error?.code);
+      this._emit('error', { url, error: audio.error });
+    };
+    audio.oncanplay = () => this._emit('ready', { url });
+    audio.onplay = () => this._emit('play', { url });
+    audio.onpause = () => this._emit('pause', { url });
+    audio.onwaiting = () => this._emit('waiting', { url });
+    audio.onplaying = () => this._emit('playing', { url });
+
+    this.player = audio;
     this.currentSrc = url;
-    return this.player;
+    return audio;
   },
-  play(url) {
-    if (this.currentSrc !== url) this.load(url);
-    this.player.play();
+
+  async play(url) {
+    if (!url) return;
+
+    // إذا كان نفس الرابط ويعمل حالياً
+    if (this.currentSrc === url && this.player) {
+      try { await this.player.play(); return; } catch (e) {}
+    }
+
+    const audio = this.load(url);
+
+    try {
+      await audio.play();
+      this._emit('success', { url });
+    } catch (err) {
+      console.warn('فشل التشغيل:', err.message);
+      this._emit('error', { url, error: err.message });
+    }
   },
-  pause() { if (this.player) this.player.pause(); },
-  stop() { if (this.player) this.player.stop(); },
-  setRepeat(n) { this.repeatTarget = n; this.repeatCount = 0; },
-  onEnd() {
+
+  pause() {
+    if (this.player) {
+      try { this.player.pause(); } catch (e) {}
+    }
+  },
+
+  stop() {
+    if (this.player) {
+      try {
+        this.player.pause();
+        this.player.currentTime = 0;
+      } catch (e) {}
+    }
+    this.repeatCount = 0;
+  },
+
+  setRepeat(n) {
+    this.repeatTarget = n || 0;
+    this.repeatCount = 0;
+  },
+
+  _onEnd() {
     this.repeatCount++;
     if (this.repeatTarget > 0 && this.repeatCount < this.repeatTarget) {
-      this.player.play();
+      if (this.player) {
+        this.player.currentTime = 0;
+        this.player.play().catch(() => {});
+      }
     } else {
       this.repeatCount = 0;
+      this._emit('ended', { url: this.currentSrc });
       window.dispatchEvent(new CustomEvent('audio-ended'));
     }
+  },
+
+  _emit(event, data) {
+    (this._listeners[event] || []).forEach(cb => cb(data));
+  },
+
+  on(event, cb) {
+    if (!this._listeners[event]) this._listeners[event] = [];
+    this._listeners[event].push(cb);
+  },
+
+  off(event, cb) {
+    if (!this._listeners[event]) return;
+    this._listeners[event] = this._listeners[event].filter(x => x !== cb);
+  },
+
+  // إزالة مستمعي "مرة واحدة"
+  once(event, cb) {
+    const wrapper = (data) => {
+      cb(data);
+      this.off(event, wrapper);
+    };
+    this.on(event, wrapper);
   },
 };
 

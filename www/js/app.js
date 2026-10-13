@@ -545,35 +545,46 @@ async function togglePlay() {
     audioState.isPlaying = false;
   } else {
     const url = getAudioUrl(state.currentSurah);
-    const fallbackUrl = getAudioUrlFallback(state.currentSurah);
-
+    const fallback = getAudioUrlFallback(state.currentSurah);
     Audio.setRepeat(1);
 
-    // حاول التشغيل من الرابط الأساسي
-    try {
-      const player = Audio.load(url);
-      const fallback = fallbackUrl;
+    if (btn) btn.textContent = '⏳ جاري التحميل...';
 
-      // مستمع لخطأ التحميل — جرّب الرابط البديل
-      if (player && fallback) {
-        player.once('loaderror', function() {
-          console.log('⚠ فشل الرابط الأساسي، تجربة البديل...');
-          Audio.load(fallback);
-          Audio.play(fallback);
+    // استمع لنتيجة التشغيل
+    let handled = false;
+    const onError = () => {
+      if (handled) return;
+      handled = true;
+      if (fallback) {
+        console.log('⚠ فشل الرابط الأساسي، تجربة البديل:', fallback);
+        Audio.once('error', () => {
+          if (btn) btn.textContent = '▶ تشغيل';
+          audioState.isPlaying = false;
+          showUpdateToast('❌ تعذّر تشغيل التلاوة');
         });
+        Audio.once('success', () => {
+          if (btn) btn.textContent = '⏸ إيقاف';
+          audioState.isPlaying = true;
+        });
+        Audio.play(fallback);
+      } else {
+        if (btn) btn.textContent = '▶ تشغيل';
+        audioState.isPlaying = false;
+        showUpdateToast('❌ تعذّر تشغيل التلاوة');
       }
+    };
 
-      Audio.play(url);
+    Audio.once('error', onError);
+    Audio.once('success', () => {
+      handled = true;
       if (btn) btn.textContent = '⏸ إيقاف';
       audioState.isPlaying = true;
-      audioState.currentSurah = state.currentSurah;
-      audioState.currentUrl = url;
-    } catch (e) {
-      console.warn('فشل تشغيل الصوت:', e);
-      if (btn) btn.textContent = '▶ تشغيل';
-    }
+    });
+
+    Audio.play(url);
   }
 }
+
 
 // عند انتهاء التلاوة
 window.addEventListener('audio-ended', () => {
