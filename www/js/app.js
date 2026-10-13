@@ -59,7 +59,6 @@ async function init() {
     status.textContent = 'جاهز!';
     document.getElementById('progress-fill').style.width = '100%';
     setTimeout(showApp, 400);
-    // التحديث التلقائي (بعد التحميل)
     setTimeout(function() {
       if (typeof setupAutoUpdater === 'function') setupAutoUpdater();
     }, 3000);
@@ -793,64 +792,189 @@ window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.showVerseTafsir = showVerseTafsir;
 window.showVerseTranslation = showVerseTranslation;
 
-// ==================== التحديث التلقائي ====================
+// ==================== نظام التحديث مع إشعارات ====================
+let _updateInfo = null;
+let _updateListenersReady = false;
+
 async function setupAutoUpdater() {
   if (!window.Capacitor || !Capacitor.Plugins) return;
-  const { CapacitorUpdater } = Capacitor.Plugins;
+  const { CapacitorUpdater, LocalNotifications } = Capacitor.Plugins;
   if (!CapacitorUpdater) {
     console.log('Updater: غير متوفر');
     return;
   }
 
   try {
-    CapacitorUpdater.addListener('download', (info) => {
-      const pct = Math.round(info.percent || 0);
-      console.log('📥 التحديث:', pct + '%');
-      showUpdateToast('📥 تحديث جديد: ' + pct + '%');
-    });
-
-    CapacitorUpdater.addListener('downloadComplete', () => {
-      console.log('✅ اكتمل تحميل التحديث');
-      showUpdateToast('✅ اكتمل التحميل — إعادة التشغيل...');
-    });
-
-    CapacitorUpdater.addListener('updateFailed', (info) => {
-      console.warn('⚠ فشل:', info);
-    });
-
-    CapacitorUpdater.addListener('updateAvailable', async (info) => {
-      console.log('🎉 تحديث جديد:', info);
-      showUpdateToast('🎉 يُطبَّق التحديث...');
+    // طلب صلاحية الإشعارات مرة واحدة
+    if (LocalNotifications) {
       try {
-        await CapacitorUpdater.next({ id: info.bundle.id });
-        setTimeout(() => CapacitorUpdater.reload(), 1500);
+        const perm = await LocalNotifications.checkPermissions();
+        if (perm.display !== 'granted') {
+          await LocalNotifications.requestPermissions();
+        }
+        // أنشئ قناة Android 8+
+        await LocalNotifications.createChannel({
+          id: 'updates',
+          name: 'التحديثات',
+          description: 'إشعارات تحديث التطبيق',
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+        });
       } catch (e) {
-        console.warn('reload:', e);
+        console.warn('Notifications setup:', e.message);
       }
-    });
 
-    const result = await CapacitorUpdater.download();
-    console.log('فحص التحديثات:', result);
+      // استمع لنقر الإشعار
+      LocalNotifications.addListener('localNotificationActionPerformed', async (action) => {
+        console.log('📱 تم النقر على الإشعار:', action);
+        if (action.notification.extra?.type === 'update') {
+          await applyUpdateNow();
+        }
+      });
+    }
+
+    // مستمعو الأحداث
+    if (!_updateListenersReady) {
+      CapacitorUpdater.addListener('download', (info) => {
+        const pct = Math.round(info.percent || 0);
+        showUpdateToast('📥 جاري تحميل التحديث: ' + pct + '%');
+      });
+
+      CapacitorUpdater.addListener('downloadComplete', () => {
+        showUpdateToast('✅ اكتمل التحميل — إعادة التشغيل...');
+      });
+
+      CapacitorUpdater.addListener('updateFailed', (info) => {
+        console.warn('⚠ فشل التحديث:', info);
+      });
+
+      _updateListenersReady = true;
+    }
+
+    // فحص التحديثات
+    await checkForUpdates();
   } catch (e) {
     console.warn('Updater error:', e.message);
   }
 }
 
-function showUpdateToast(msg) {
-  let toast = document.getElementById('update-toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'update-toast';
-    toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);' +
-      'background:#0a3d2c;color:#c9a961;padding:.75rem 1.25rem;border-radius:25px;' +
-      'font-family:inherit;font-size:.95rem;box-shadow:0 4px 15px rgba(0,0,0,.3);' +
-      'z-index:99999;transition:opacity .3s;opacity:0;';
-    document.body.appendChild(toast);
+async function checkForUpdates() {
+  const { CapacitorUpdater, LocalNotifications } = Capacitor.Plugins;
+
+  try {
+    // جلب معلومات التحديث من GitHub
+    const res = await fetch('https://github.com/abdo15542/libya-quran-app/releases/latest/download/update.json?_=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const remote = await res.json();
+
+    // الإصدار الحالي
+    const current = await CapacitorUpdater.current();
+    const currentVersion = current?.bundle?.version || 'builtin';
+
+    console.log('📌 الإصدار الحالي:', currentVersion);
+    console.log('📌 الإصدار المتوفر:', remote.version);
+
+    // هل يوجد تحديث جديد؟
+    if (remote.version && remote.version !== currentVersion) {
+      _updateInfo = remote;
+      console.log('🎉 تحديث جديد متوفر:', remote.version);
+
+      // إظهار إشعار
+      if (LocalNotifications) {
+        await LocalNotifications.schedule({
+          notifications: [{
+            id: 1001,
+            title: '🕌 مصحف ليبيا — تحديث جديد',
+            body: 'اضغط لتحميل وتثبيت التحديث الآن',
+            channelId: 'updates',
+            smallIcon: 'ic_stat_icon_config_sample',
+            iconColor: '#0a3d2c',
+            extra: { type: 'update' },
+            ongoing: false,
+            autoCancel: true,
+          }]
+        });
+        console.log('✓ تم إظهار الإشعار');
+      }
+
+      // إظهار شريط داخل التطبيق أيضاً
+      showUpdateBanner(remote.version);
+    } else {
+      console.log('✓ أنت على أحدث إصدار');
+    }
+  } catch (e) {
+    console.warn('فحص التحديثات:', e.message);
   }
-  toast.textContent = msg;
-  toast.style.opacity = '1';
-  clearTimeout(window._toastTimer);
-  window._toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+}
+
+async function applyUpdateNow() {
+  const { CapacitorUpdater } = Capacitor.Plugins;
+  if (!CapacitorUpdater) return;
+
+  showUpdateToast('📥 جاري تحميل التحديث...');
+
+  try {
+    // حمّل التحديث من رابط bundle.zip
+    const bundle = await CapacitorUpdater.download({
+      url: 'https://github.com/abdo15542/libya-quran-app/releases/latest/download/bundle.zip',
+      version: _updateInfo?.version || ('v' + Date.now()),
+    });
+
+    console.log('✓ تم تحميل الحزمة:', bundle);
+
+    showUpdateToast('✅ جاري تطبيق التحديث...');
+
+    // طبّق التحديث وأعد التشغيل
+    await CapacitorUpdater.set({ id: bundle.id });
+    await CapacitorUpdater.reload();
+  } catch (e) {
+    console.error('فشل تطبيق التحديث:', e);
+    showUpdateToast('❌ فشل: ' + e.message);
+  }
+}
+
+// شريط التحديث داخل التطبيق
+function showUpdateBanner(version) {
+  // احذف القديم إن وُجد
+  const old = document.getElementById('update-banner');
+  if (old) old.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.75rem;flex:1">
+      <span style="font-size:1.5rem">🎉</span>
+      <div style="flex:1">
+        <div style="font-weight:bold;color:var(--gold)">تحديث جديد متوفر</div>
+        <div style="font-size:.8rem;opacity:.9">الإصدار: ${version}</div>
+      </div>
+    </div>
+    <button id="update-now-btn" style="background:var(--gold);color:var(--green);border:none;padding:.5rem 1rem;border-radius:20px;font-family:inherit;font-size:.9rem;font-weight:bold;cursor:pointer;white-space:nowrap">
+      تحديث الآن
+    </button>
+    <button id="update-close-btn" style="background:transparent;color:var(--text-2);border:none;font-size:1.3rem;cursor:pointer;padding:.25rem">✕</button>
+  `;
+  banner.style.cssText = 'position:fixed;bottom:70px;left:.5rem;right:.5rem;background:#0a3d2c;' +
+    'color:#fff;padding:.75rem;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.4);' +
+    'z-index:10000;display:flex;align-items:center;gap:.5rem;font-family:inherit;' +
+    'animation:slideUp .3s ease;border:2px solid var(--gold);';
+
+  document.body.appendChild(banner);
+
+  document.getElementById('update-now-btn').onclick = () => {
+    banner.remove();
+    applyUpdateNow();
+  };
+  document.getElementById('update-close-btn').onclick = () => banner.remove();
+
+  // حرّك الشريط للأعلى
+  if (!document.getElementById('update-banner-style')) {
+    const style = document.createElement('style');
+    style.id = 'update-banner-style';
+    style.textContent = '@keyframes slideUp{from{transform:translateY(100px);opacity:0}to{transform:translateY(0);opacity:1}}';
+    document.head.appendChild(style);
+  }
 }
 
 // ==================== Service Worker ====================

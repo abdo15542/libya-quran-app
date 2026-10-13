@@ -12,6 +12,11 @@
       "responseTimeout": 30,
       "allowModifyUrl": true,
       "statsUrl": ""
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon_config_sample",
+      "iconColor": "#0a3d2c",
+      "sound": "beep.wav"
     }
   }
 }
