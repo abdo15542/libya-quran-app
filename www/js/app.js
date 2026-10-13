@@ -34,7 +34,14 @@ async function init() {
   state.notes     = (await DB.getUserData('notes')) || {};
   state.progress  = (await DB.getUserData('progress')) || {};
   state.fontSize  = (await DB.getUserData('fontSize')) || 1.6;
-  state.reader    = (await DB.getUserData('reader')) || 'frgany';
+  // القارئ — تصحيح تلقائي إذا كان محذوفاً
+  const savedReader = await DB.getUserData('reader');
+  if (savedReader && window.READERS && window.READERS[savedReader]) {
+    state.reader = savedReader;
+  } else {
+    state.reader = Object.keys(window.READERS || {})[0] || 'abdulbasit';
+    await DB.saveUserData('reader', state.reader);
+  }
   state.viewMode  = (await DB.getUserData('viewMode')) || 'normal';
 
   const lastSurah = await DB.getUserData('last_surah');
@@ -771,84 +778,120 @@ async function updateAudioStatsUI() {
 }
 
 async function startAudioDownload() {
+  console.log('🟢 startAudioDownload() استُدعيت');
+  
   const btn = document.getElementById('audio-dl-btn');
   const label = document.getElementById('audio-progress-label');
   const fill = document.getElementById('audio-progress-fill');
   
+  // فحص 1: الوحدة محمّلة؟
   if (!window.AudioDownloader) {
-    return showUpdateToast('❌ وحدة التحميل غير محمّلة');
-  }
-
-  if (AudioDownloader.isDownloading()) {
-    return showUpdateToast('⚠ التحميل جارٍ بالفعل');
-  }
-
-  const reader = window.READERS[state.reader];
-  if (!reader) {
-    return showUpdateToast('❌ اختر قارئاً أولاً');
-  }
-
-  // تنبيه للقراء من نوع ayah
-  let warning = 'سيتم تحميل ' + reader.name + '\n\n';
-  warning += 'الحجم المتوقع: ~800 ميجابايت\n';
-  warning += 'الوقت المتوقع: 20-60 دقيقة\n\n';
-  warning += '💡 يُنصح باستخدام WiFi\n';
-  warning += '(لكنه يعمل على أي شبكة)\n\n';
-  warning += 'هل تريد المتابعة؟';
-
-  if (!confirm(warning)) {
+    console.error('❌ AudioDownloader غير محمّلة');
+    showUpdateToast('❌ وحدة التحميل غير محمّلة');
     return;
   }
 
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري التحميل...'; }
+  // فحص 2: التحميل جارٍ؟
+  if (AudioDownloader.isDownloading()) {
+    showUpdateToast('⚠ التحميل جارٍ بالفعل');
+    return;
+  }
 
+  // فحص 3: قائمة القراء موجودة؟
+  if (!window.READERS) {
+    console.error('❌ window.READERS غير معرّف');
+    showUpdateToast('❌ قائمة القراء غير محمّلة');
+    return;
+  }
+
+  // فحص 4: القارئ المختار صالح؟
+  let reader = window.READERS[state.reader];
+  if (!reader) {
+    console.warn('⚠ القارئ "' + state.reader + '" غير موجود، استخدام الأول');
+    state.reader = Object.keys(window.READERS)[0];
+    reader = window.READERS[state.reader];
+  }
+  
+  console.log('🎧 القارئ:', state.reader, reader.name);
+
+  // فحص 5: المصحف محمّل؟
+  if (!state.data || !state.data.surahs || !state.data.surahs.length) {
+    console.error('❌ المصحف غير محمّل بعد');
+    showUpdateToast('❌ انتظر تحميل المصحف أولاً');
+    return;
+  }
+
+  // نافذة تأكيد
+  const confirmMsg = 
+    'سيتم تحميل: ' + reader.name + '\n\n' +
+    'الحجم المتوقع: ~800 ميجابايت\n' +
+    'الوقت: 20-60 دقيقة\n\n' +
+    '💡 يعمل على أي شبكة (يُفضل WiFi)\n\n' +
+    'هل تريد المتابعة؟';
+  
+  if (!confirm(confirmMsg)) return;
+
+  if (btn) { 
+    btn.disabled = true; 
+    btn.textContent = '⏳ جاري التحميل...'; 
+  }
+
+  // اجعل المصحف متاحاً للـ downloader
   window.QURAN_DATA_CACHE = state.data;
-  let lastSize = 0;
+
+  let totalSize = 0;
+  let downloaded = 0;
 
   try {
+    console.log('🚀 بدء التحميل...');
+    
     await AudioDownloader.downloadAll(state.reader, (progress) => {
       const pct = Math.round((progress.completed / progress.total) * 100);
       if (fill) fill.style.width = pct + '%';
       
-      // احسب الحجم
-      if (progress.size) lastSize += progress.size;
-      const sizeMB = (lastSize / 1024 / 1024).toFixed(1);
+      if (progress.size) totalSize += progress.size;
+      const sizeMB = (totalSize / 1024 / 1024).toFixed(1);
       
       if (label) {
         const status = progress.status === 'done' ? '✅'
           : progress.status === 'failed' ? '❌'
           : progress.status === 'skip' ? '⏭'
           : '⏳';
-        label.innerHTML = status + ' سورة ' + progress.current + 
+        label.innerHTML = 
+          status + ' سورة ' + progress.current + 
           ' (' + (progress.surahName || '') + ')<br>' +
           progress.completed + ' / ' + progress.total + 
-          ' — ' + pct + '% — ' + sizeMB + ' MB';
+          ' — ' + pct + '% — ' + sizeMB + ' MB' +
+          (progress.error ? '<br><span style="color:#c00">خطأ: ' + progress.error + '</span>' : '');
       }
       
-      // إشعار للنجاح
       if (progress.status === 'done') {
-        console.log('✓ تم تحميل سورة ' + progress.current);
-      }
-      if (progress.status === 'failed') {
-        console.warn('✗ فشلت سورة ' + progress.current + ': ' + progress.error);
+        downloaded++;
+        console.log('✅ ' + progress.current + ' — ' + (progress.surahName || ''));
       }
     });
 
     const stats = await AudioDownloader.getStats();
-    const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
+    const finalMB = (stats.bytes / 1024 / 1024).toFixed(1);
     
-    showUpdateToast('✅ اكتمل! ' + stats.count + '/114 سورة — ' + sizeMB + ' MB');
+    console.log('🎉 اكتمل!', stats.count, 'سورة،', finalMB, 'MB');
+    showUpdateToast('✅ اكتمل! ' + stats.count + '/114 سورة — ' + finalMB + ' MB');
     await updateAudioStatsUI();
     
     if (btn) { 
-      btn.textContent = '✅ مكتمل (' + sizeMB + ' MB)'; 
+      btn.textContent = '✅ مكتمل (' + finalMB + ' MB)'; 
       btn.style.background = '#27ae60'; 
     }
   } catch (e) {
+    console.error('❌ فشل التحميل:', e);
     showUpdateToast('❌ فشل: ' + e.message);
-    if (btn) { btn.disabled = false; btn.textContent = '⬇️ إعادة المحاولة'; }
+    if (btn) { 
+      btn.disabled = false; 
+      btn.textContent = '⬇️ إعادة المحاولة'; 
+    }
   }
 }
+
 
 
 async function deleteAudioDownload() {
@@ -870,8 +913,14 @@ function setFontSize(v) {
   DB.saveUserData('fontSize', state.fontSize);
 }
 function setReader(r) {
+  if (!window.READERS[r]) {
+    showUpdateToast('❌ قارئ غير معروف');
+    return;
+  }
   state.reader = r;
   DB.saveUserData('reader', r);
+  console.log('✓ تم اختيار القارئ:', r);
+  updateAudioStatsUI();
 }
 function setTajweed(enabled) {
   if (window.Tajweed) Tajweed.toggle(enabled);
