@@ -1,51 +1,53 @@
-// ============ مشغل الصوت — يقرأ من التخزين المحلي أولاً ============
+// ============ مشغل الصوت ============
 
 const QuranAudio = {
   player: null,
-  currentSrc: null,
   currentBlobUrl: null,
   repeatTarget: 0,
   repeatCount: 0,
   _listeners: {},
+  _cache: {},
 
-  async play(readerKey, surahNum, ayahNum) {
-    const key = readerKey + '_' + surahNum;
-    
+  async playUrl(url) {
     try {
-      // 1. جرّب من IndexedDB أولاً
-      let blob = null;
-      if (window.AudioDownloader) {
-        blob = await AudioDownloader.get(key);
-      }
-      
-      // 2. إذا لم يوجد محلياً، حمّله من الإنترنت
+      let blob = this._cache[url];
       if (!blob) {
-        const url = window.RecitersModule.buildUrl(readerKey, surahNum, ayahNum || 1);
-        console.log('🌐 تحميل من الإنترنت:', url);
+        console.log('🌐 جلب:', url);
         const res = await fetch(url);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         blob = await res.blob();
-      } else {
-        console.log('💾 تشغيل من التخزين المحلي');
+        this._cache[url] = blob;
       }
-      
-      // 3. شغّل
-      await this._playBlob(blob);
-      this._emit('success', { readerKey, surahNum });
-      return true;
+      return this._playBlob(blob);
     } catch (e) {
-      console.warn('❌ فشل التشغيل:', e.message);
-      this._emit('error', { error: e.message });
+      this._emit('error', { url, error: e.message });
+      throw e;
+    }
+  },
+
+  async play(readerKey, surahNum) {
+    const url = window.RecitersModule.buildUrl(readerKey, surahNum);
+    const fallback = window.RecitersModule.buildUrlFallback(readerKey, surahNum);
+
+    try {
+      await this.playUrl(url);
+      this._emit('success', { readerKey, surahNum });
+      return;
+    } catch (e) {
+      console.warn('⚠ فشل الرابط الأساسي، تجربة البديل...');
+      if (fallback) {
+        await this.playUrl(fallback);
+        this._emit('success', { readerKey, surahNum, fallback: true });
+        return;
+      }
       throw e;
     }
   },
 
   _playBlob(blob) {
-    // ألغِ الرابط السابق
     if (this.currentBlobUrl) {
       try { URL.revokeObjectURL(this.currentBlobUrl); } catch (e) {}
     }
-
     const blobUrl = URL.createObjectURL(blob);
     this.currentBlobUrl = blobUrl;
 
@@ -58,40 +60,20 @@ const QuranAudio = {
     audio.preload = 'auto';
 
     audio.onended = () => this._onEnd();
-    audio.onerror = () => {
-      console.warn('❌ خطأ الصوت:', audio.error?.code);
-      this._emit('error', { code: audio.error?.code });
-    };
-    audio.oncanplay = () => this._emit('ready', {});
+    audio.onerror = () => this._emit('error', { code: audio.error?.code });
 
     this.player = audio;
-    this.currentSrc = blobUrl;
-
     return audio.play();
   },
 
-  pause() {
-    if (this.player) {
-      try { this.player.pause(); } catch (e) {}
-    }
-  },
-
-  stop() {
-    if (this.player) {
-      try { this.player.pause(); this.player.currentTime = 0; } catch (e) {}
-    }
-    this.repeatCount = 0;
-  },
-
+  pause() { if (this.player) { try { this.player.pause(); } catch (e) {} } },
+  stop() { if (this.player) { try { this.player.pause(); this.player.currentTime = 0; } catch (e) {} } this.repeatCount = 0; },
   setRepeat(n) { this.repeatTarget = n || 0; this.repeatCount = 0; },
 
   _onEnd() {
     this.repeatCount++;
     if (this.repeatTarget > 0 && this.repeatCount < this.repeatTarget) {
-      if (this.player) {
-        this.player.currentTime = 0;
-        this.player.play().catch(() => {});
-      }
+      if (this.player) { this.player.currentTime = 0; this.player.play().catch(() => {}); }
     } else {
       this.repeatCount = 0;
       this._emit('ended', {});

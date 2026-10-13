@@ -259,24 +259,38 @@ function toggleInlineActions(verseEl) {
   actions.classList.toggle('hidden');
 }
 
-function playSurahFromVerse(surahNum, ayahNum) {
-  // شغّل السورة كاملة من البداية
-  if (state.currentSurah !== surahNum) {
-    state.currentSurah = surahNum;
+async function playSurahFromVerse(surahNum, ayahNum) {
+  if (!window.QuranAudio) return;
+
+  // إذا كان يشغّل نفس السورة
+  if (audioState.isPlaying && audioState.currentSurah === surahNum) {
+    QuranAudio.pause();
+    audioState.isPlaying = false;
+    const btn = document.getElementById('play-btn');
+    if (btn) btn.textContent = '▶ تشغيل';
+    return;
   }
 
-  const url = getAudioUrl(surahNum);
-  QuranQuranAudio.setRepeat(1);
-  QuranQuranQuranAudio.play(url);
-
-  audioState.isPlaying = true;
-  audioState.currentSurah = surahNum;
-
+  state.currentSurah = surahNum;
   const btn = document.getElementById('play-btn');
-  if (btn) btn.textContent = '⏸ إيقاف';
+  if (btn) btn.textContent = '⏳ جاري التحميل...';
 
-  showUpdateToast('🎧 جاري تشغيل سورة ' + (state.data?.surahs?.[surahNum - 1]?.name || ''));
+  const surahName = state.data?.surahs?.[surahNum - 1]?.name || '';
+  showUpdateToast('🎧 جاري تشغيل سورة ' + surahName);
+
+  try {
+    await QuranAudio.play(state.reader, surahNum);
+    audioState.isPlaying = true;
+    audioState.currentSurah = surahNum;
+    if (btn) btn.textContent = '⏸ إيقاف';
+    showUpdateToast('▶ سورة ' + surahName);
+  } catch (e) {
+    if (btn) btn.textContent = '▶ تشغيل';
+    audioState.isPlaying = false;
+    showUpdateToast('❌ فشل: ' + e.message);
+  }
 }
+
 
 function closeVerseInline(verseEl) {
   const actions = verseEl.querySelector('.verse-inline-actions');
@@ -519,9 +533,9 @@ async function togglePlay() {
   } else {
     if (btn) btn.textContent = '⏳ جاري التحميل...';
     audioState.isPlaying = true;
-    
+
     try {
-      await QuranAudio.play(state.reader, state.currentSurah, 1);
+      await QuranAudio.play(state.reader, state.currentSurah);
       if (btn) btn.textContent = '⏸ إيقاف';
     } catch (e) {
       if (btn) btn.textContent = '▶ تشغيل';
@@ -530,6 +544,7 @@ async function togglePlay() {
     }
   }
 }
+
 
 
 
