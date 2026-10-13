@@ -498,13 +498,43 @@ window.addEventListener('audio-ended', () => {
 
 // ==================== شريط الأدوات العلوي ====================
 function handleToolbar(action) {
-  if (action === 'tafseer')        openSearchModal();
-  else if (action === 'translate') openSearchModal();
-  else if (action === 'tajweed')   showTajweedLegend();
-  else if (action === 'bookmark')  showBookmarks();
-  else if (action === 'note')      openNote();
-  else if (action === 'settings')  openSettingsNew();
+  const surah = state.data?.surahs?.[state.currentSurah - 1];
+  const totalAyahs = surah?.verses?.length || 1;
+
+  if (action === 'tafseer') {
+    const a = prompt('اختر رقم الآية من 1 إلى ' + totalAyahs + ':', '1');
+    if (a && +a >= 1 && +a <= totalAyahs) {
+      // اذهب إلى الآية وافتح التفسير
+      const el = document.querySelector('.verse[data-ayah="' + a + '"]');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+          // أغلق أي محتوى سابق
+          document.querySelectorAll('.verse-inline-actions:not(.hidden)').forEach(x => x.classList.add('hidden'));
+          toggleInlineTafsir(state.currentSurah, +a, el);
+        }, 400);
+      }
+    }
+  }
+  else if (action === 'translate') {
+    const a = prompt('اختر رقم الآية من 1 إلى ' + totalAyahs + ':', '1');
+    if (a && +a >= 1 && +a <= totalAyahs) {
+      const el = document.querySelector('.verse[data-ayah="' + a + '"]');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+          document.querySelectorAll('.verse-inline-actions:not(.hidden)').forEach(x => x.classList.add('hidden'));
+          toggleInlineTranslation(state.currentSurah, +a, el);
+        }, 400);
+      }
+    }
+  }
+  else if (action === 'tajweed')  showTajweedLegend();
+  else if (action === 'bookmark') showBookmarks();
+  else if (action === 'note')     openNote();
+  else if (action === 'settings') openSettingsNew();
 }
+
 
 function showBookmarks() {
   if (!state.bookmarks.length) return openModal('العلامات', 'لا توجد علامات بعد.');
