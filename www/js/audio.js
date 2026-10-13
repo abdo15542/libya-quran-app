@@ -1,89 +1,73 @@
-// ============ مشغل صوت HTML5 أصلي (حل تجاوز Capacitor) ============
+// ============ مشغل الصوت — يقرأ من التخزين المحلي أولاً ============
 
 const QuranAudio = {
   player: null,
   currentSrc: null,
+  currentBlobUrl: null,
   repeatTarget: 0,
   repeatCount: 0,
   _listeners: {},
-  _cache: {}, // لتخزين الملفات المسحوبة
 
-  load(url) {
-    if (this.player) {
-      try { this.player.pause(); } catch (e) {}
-      this.player = null;
-    }
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.src = url;
-    audio.onended = () => this._onEnd();
-    audio.onerror = () => {
-      console.warn('❌ خطأ الصوت:', url, audio.error?.code);
-      this._emit('error', { url, error: audio.error });
-    };
-    audio.oncanplay = () => this._emit('ready', { url });
-    this.player = audio;
-    this.currentSrc = url;
-    return audio;
-  },
-
-  // الحل الجذري: جلب الملف كـ blob ثم تشغيله
-  async playViaBlob(url) {
+  async play(readerKey, surahNum, ayahNum) {
+    const key = readerKey + '_' + surahNum;
+    
     try {
-      // إذا كان الملف مخزناً مؤقتاً، استخدمه مباشرة
-      if (this._cache[url]) {
-        return this._playBlob(this._cache[url]);
+      // 1. جرّب من IndexedDB أولاً
+      let blob = null;
+      if (window.AudioDownloader) {
+        blob = await AudioDownloader.get(key);
       }
-
-      console.log('🔄 جلب الصوت:', url);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
       
-      const blob = await res.blob();
-      this._cache[url] = blob; // تخزين مؤقت
+      // 2. إذا لم يوجد محلياً، حمّله من الإنترنت
+      if (!blob) {
+        const url = window.RecitersModule.buildUrl(readerKey, surahNum, ayahNum || 1);
+        console.log('🌐 تحميل من الإنترنت:', url);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        blob = await res.blob();
+      } else {
+        console.log('💾 تشغيل من التخزين المحلي');
+      }
       
-      return this._playBlob(blob);
+      // 3. شغّل
+      await this._playBlob(blob);
+      this._emit('success', { readerKey, surahNum });
+      return true;
     } catch (e) {
-      console.warn('❌ فشل جلب الصوت:', e.message);
-      // محاولة بديلة: استخدام الرابط مباشرة (قد يعمل أحياناً)
-      this._emit('error', { url, error: e.message });
+      console.warn('❌ فشل التشغيل:', e.message);
+      this._emit('error', { error: e.message });
       throw e;
     }
   },
 
   _playBlob(blob) {
+    // ألغِ الرابط السابق
+    if (this.currentBlobUrl) {
+      try { URL.revokeObjectURL(this.currentBlobUrl); } catch (e) {}
+    }
+
     const blobUrl = URL.createObjectURL(blob);
+    this.currentBlobUrl = blobUrl;
+
     if (this.player) {
-      try { this.player.pause(); URL.revokeObjectURL(this.currentSrc); } catch (e) {}
+      try { this.player.pause(); } catch (e) {}
     }
 
     const audio = new Audio();
     audio.src = blobUrl;
     audio.preload = 'auto';
-    
-    // أحداث
+
     audio.onended = () => this._onEnd();
     audio.onerror = () => {
       console.warn('❌ خطأ الصوت:', audio.error?.code);
-      this._emit('error', { error: audio.error });
+      this._emit('error', { code: audio.error?.code });
     };
-    audio.oncanplay = () => this._emit('ready', { url: blobUrl });
+    audio.oncanplay = () => this._emit('ready', {});
 
     this.player = audio;
     this.currentSrc = blobUrl;
 
     return audio.play();
-  },
-
-  async play(url) {
-    if (!url) return;
-    try {
-      await this.playViaBlob(url);
-      this._emit('success', { url });
-    } catch (err) {
-      console.warn('فشل التشغيل النهائي:', err.message);
-      this._emit('error', { url, error: err.message });
-    }
   },
 
   pause() {
@@ -104,10 +88,13 @@ const QuranAudio = {
   _onEnd() {
     this.repeatCount++;
     if (this.repeatTarget > 0 && this.repeatCount < this.repeatTarget) {
-      if (this.player) { this.player.currentTime = 0; this.player.play().catch(() => {}); }
+      if (this.player) {
+        this.player.currentTime = 0;
+        this.player.play().catch(() => {});
+      }
     } else {
       this.repeatCount = 0;
-      this._emit('ended', { url: this.currentSrc });
+      this._emit('ended', {});
       window.dispatchEvent(new CustomEvent('audio-ended'));
     }
   },

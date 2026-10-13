@@ -951,3 +951,99 @@ body {
   direction: ltr;
   text-align: left;
 }
+
+/* ========== صندوق تحميل المصحف الصوتي ========== */
+.audio-download-box {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: linear-gradient(135deg, #0a3d2c15, #1a5c4520);
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+}
+
+.audio-download-header {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--green);
+  margin-bottom: .5rem;
+  text-align: center;
+}
+[data-theme="dark"] .audio-download-header { color: var(--gold); }
+
+.audio-download-info {
+  text-align: center;
+  font-size: .9rem;
+  color: var(--text);
+  margin-bottom: .75rem;
+  font-family: system-ui, sans-serif;
+}
+.audio-download-info strong {
+  color: var(--green);
+  font-size: 1.05rem;
+}
+[data-theme="dark"] .audio-download-info strong { color: var(--gold); }
+
+.audio-progress-bar {
+  height: 10px;
+  background: var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: .5rem;
+}
+.audio-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), #ffd77a);
+  transition: width .3s;
+}
+
+.audio-progress-label {
+  font-size: .8rem;
+  color: var(--text-2);
+  text-align: center;
+  margin-bottom: .75rem;
+  min-height: 1.2rem;
+  font-family: monospace, system-ui;
+  direction: rtl;
+}
+
+.audio-download-actions {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.audio-dl-btn-primary {
+  width: 100%;
+  padding: .8rem;
+  background: linear-gradient(135deg, var(--green), var(--green-light));
+  color: var(--gold);
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform .1s;
+}
+.audio-dl-btn-primary:active { transform: scale(.98); }
+.audio-dl-btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+.audio-dl-btn-danger {
+  width: 100%;
+  padding: .6rem;
+  background: transparent;
+  color: #c0392b;
+  border: 1px solid #c0392b;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+}
+
+.audio-download-note {
+  font-size: .75rem;
+  color: var(--text-2);
+  text-align: center;
+  margin-top: .5rem;
+  line-height: 1.6;
+}

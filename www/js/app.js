@@ -545,50 +545,24 @@ async function togglePlay() {
   if (!window.QuranAudio) return;
 
   if (audioState.isPlaying) {
-    QuranQuranQuranAudio.pause();
+    QuranAudio.pause();
     if (btn) btn.textContent = '▶ تشغيل';
     audioState.isPlaying = false;
   } else {
-    const url = getAudioUrl(state.currentSurah);
-    const fallback = getAudioUrlFallback(state.currentSurah);
-    QuranQuranAudio.setRepeat(1);
-
     if (btn) btn.textContent = '⏳ جاري التحميل...';
-
-    // استمع لنتيجة التشغيل
-    let handled = false;
-    const onError = () => {
-      if (handled) return;
-      handled = true;
-      if (fallback) {
-        console.log('⚠ فشل الرابط الأساسي، تجربة البديل:', fallback);
-        QuranQuranAudio.once('error', () => {
-          if (btn) btn.textContent = '▶ تشغيل';
-          audioState.isPlaying = false;
-          showUpdateToast('❌ تعذّر تشغيل التلاوة');
-        });
-        QuranQuranAudio.once('success', () => {
-          if (btn) btn.textContent = '⏸ إيقاف';
-          audioState.isPlaying = true;
-        });
-        QuranQuranQuranAudio.play(fallback);
-      } else {
-        if (btn) btn.textContent = '▶ تشغيل';
-        audioState.isPlaying = false;
-        showUpdateToast('❌ تعذّر تشغيل التلاوة');
-      }
-    };
-
-    QuranQuranAudio.once('error', onError);
-    QuranQuranAudio.once('success', () => {
-      handled = true;
+    audioState.isPlaying = true;
+    
+    try {
+      await QuranAudio.play(state.reader, state.currentSurah, 1);
       if (btn) btn.textContent = '⏸ إيقاف';
-      audioState.isPlaying = true;
-    });
-
-    QuranQuranQuranAudio.play(url);
+    } catch (e) {
+      if (btn) btn.textContent = '▶ تشغيل';
+      audioState.isPlaying = false;
+      showUpdateToast('❌ ' + e.message);
+    }
   }
 }
+
 
 
 // عند انتهاء التلاوة
@@ -745,12 +719,30 @@ function openSettingsNew() {
              oninput="setFontSize(this.value)" />
 
       <label>🎧 القارئ</label>
-      <select onchange="setReader(this.value)">
+      <select onchange="setReader(this.value)" id="reader-select">
         ${readerOptions}
       </select>
 
-      <div class="audio-stats-box" id="audio-stats-box">
-        📊 جاري حساب الملفات الصوتية المحمّلة...
+      <div class="audio-download-box" id="audio-download-box">
+        <div class="audio-download-header">🎵 المصحف الصوتي</div>
+        <div class="audio-download-info" id="audio-stats-text">
+          ⏳ جاري حساب...
+        </div>
+        <div class="audio-progress-bar">
+          <div class="audio-progress-fill" id="audio-progress-fill" style="width:0%"></div>
+        </div>
+        <div class="audio-progress-label" id="audio-progress-label"></div>
+        <div class="audio-download-actions">
+          <button class="audio-dl-btn-primary" id="audio-dl-btn" onclick="startAudioDownload()">
+            ⬇️ تحميل المصحف الصوتي
+          </button>
+          <button class="audio-dl-btn-danger" id="audio-del-btn" onclick="deleteAudioDownload()">
+            🗑️ حذف الملفات الصوتية
+          </button>
+        </div>
+        <div class="audio-download-note">
+          💡 التحميل يستهلك ~800 ميجابايت — يُنصح باستخدام WiFi
+        </div>
       </div>
 
       <label>التلوين التجويدي</label>
@@ -758,14 +750,6 @@ function openSettingsNew() {
         <input type="checkbox" id="tajweed-check" ${window.Tajweed && Tajweed.isEnabled()?'checked':''}
                onchange="setTajweed(this.checked)" style="width:20px;height:20px" />
         <label for="tajweed-check" style="margin:0;font-weight:normal">تفعيل تلوين أحكام التجويد</label>
-      </div>
-
-      <div style="margin-top:1rem;padding:1rem;background:var(--verse-active);border-radius:8px">
-        <div style="font-weight:bold;margin-bottom:.5rem">🧪 اختبار التشغيل</div>
-        <button onclick="testAllReaders()" style="width:100%;padding:.6rem;background:var(--gold);color:var(--green);border:none;border-radius:6px;font-family:inherit;font-size:.95rem;cursor:pointer;font-weight:bold">
-          اختبار جميع القراء
-        </button>
-        <div id="audio-test-results" style="margin-top:.75rem;font-size:.8rem;max-height:200px;overflow-y:auto"></div>
       </div>
 
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-2)">
@@ -781,14 +765,83 @@ function openSettingsNew() {
   `;
   openModal('⚙️ الإعدادات', html);
 
-  // حدّث إحصاءات الصوت بشكل غير متزامن
-  getAudioCacheStats().then(s => {
-    const box = document.getElementById('audio-stats-box');
-    if (box) {
-      box.innerHTML = '🎧 سور محمّلة للاستماع بدون إنترنت: <strong>' + s.count + '</strong>';
-    }
-  });
+  // احسب الإحصاءات
+  updateAudioStatsUI();
 }
+
+async function updateAudioStatsUI() {
+  if (!window.AudioDownloader) return;
+  try {
+    const stats = await AudioDownloader.getStats();
+    const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
+    const box = document.getElementById('audio-stats-text');
+    if (box) {
+      box.innerHTML = '📦 محمّل: <strong>' + stats.count + ' / 114</strong> سورة (' + sizeMB + ' MB)';
+    }
+    
+    const pct = Math.round((stats.count / 114) * 100);
+    const fill = document.getElementById('audio-progress-fill');
+    if (fill) fill.style.width = pct + '%';
+  } catch (e) {
+    console.warn('إحصاءات الصوت:', e);
+  }
+}
+
+async function startAudioDownload() {
+  const btn = document.getElementById('audio-dl-btn');
+  const label = document.getElementById('audio-progress-label');
+  const fill = document.getElementById('audio-progress-fill');
+  
+  if (!window.AudioDownloader) {
+    return showUpdateToast('❌ وحدة التحميل غير محمّلة');
+  }
+
+  if (AudioDownloader.isDownloading()) {
+    return showUpdateToast('⚠ التحميل جارٍ بالفعل');
+  }
+
+  if (!confirm('سيتم تحميل ~800 ميجابايت.\n\nيُفضل استخدام WiFi.\n\nهل تريد المتابعة؟')) {
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري التحميل...'; }
+
+  // اجعل المصحف متاحاً للمحمّل
+  window.QURAN_DATA_CACHE = state.data;
+
+  try {
+    await AudioDownloader.downloadAll(state.reader, (progress) => {
+      const pct = Math.round((progress.completed / progress.total) * 100);
+      if (fill) fill.style.width = pct + '%';
+      if (label) {
+        const status = progress.status === 'done' ? '✅'
+          : progress.status === 'failed' ? '❌'
+          : progress.status === 'skip' ? '⏭'
+          : '⏳';
+        label.textContent = status + ' سورة ' + progress.current + ' — ' + progress.completed + '/' + progress.total + ' (' + pct + '%)';
+      }
+    });
+
+    showUpdateToast('✅ اكتمل تحميل المصحف الصوتي');
+    await updateAudioStatsUI();
+    if (btn) { btn.textContent = '✅ مكتمل'; btn.style.background = '#27ae60'; }
+  } catch (e) {
+    showUpdateToast('❌ فشل: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ إعادة المحاولة'; }
+  }
+}
+
+async function deleteAudioDownload() {
+  if (!confirm('سيتم حذف جميع الملفات الصوتية المحمّلة. هل أنت متأكد؟')) return;
+  try {
+    await AudioDownloader.deleteAll();
+    showUpdateToast('🗑️ تم حذف جميع الملفات الصوتية');
+    await updateAudioStatsUI();
+  } catch (e) {
+    showUpdateToast('❌ فشل الحذف: ' + e.message);
+  }
+}
+
 
 
 function setFontSize(v) {
@@ -981,6 +1034,9 @@ window.setViewMode = setViewMode;
 window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.showVerseTafsir = showVerseTafsir;
 window.openMemoSection = openMemoSection;
+window.startAudioDownload = startAudioDownload;
+window.deleteAudioDownload = deleteAudioDownload;
+window.updateAudioStatsUI = updateAudioStatsUI;
 window.downloadCurrentSurah = downloadCurrentSurah;
 window.isSurahDownloaded = isSurahDownloaded;
 window.deleteSurahDownload = deleteSurahDownload;
