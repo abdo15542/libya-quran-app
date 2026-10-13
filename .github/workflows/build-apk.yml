@@ -59,7 +59,7 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -300
+          ./gradlew assembleDebug --no-daemon --stacktrace --init-script init.gradle 2>&1 | tail -300
 
       - name: Build Update Bundle
         run: |

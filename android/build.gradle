@@ -1,17 +1,15 @@
 buildscript {
     repositories {
-        // Aliyun Mirrors (أسرع وأكثر استقراراً من Maven Central)
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        maven { url 'https://maven.aliyun.com/repository/releases' }
-        // Google و Maven Central كاحتياطي
         google()
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.2'
-        classpath 'com.google.gms:google-services:4.4.0'
+        // تحديث AGP لدعم SDK 35
+        classpath 'com.android.tools.build:gradle:8.7.2'
+        classpath 'com.google.gms:google-services:4.4.2'
     }
 }
 
@@ -19,14 +17,10 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
-        // Aliyun Mirrors أولاً
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        maven { url 'https://maven.aliyun.com/repository/releases' }
-        // JitPack كاحتياطي إضافي
         maven { url 'https://jitpack.io' }
-        // المستودعات الرسمية كاحتياطي أخير
         google()
         mavenCentral()
     }
