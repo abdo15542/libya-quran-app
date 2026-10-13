@@ -93,24 +93,24 @@ async function getAudioStats() {
 // ============ التحميل الفعلي ============
 
 let _downloadInProgress = false;
-let _downloadCallbacks = {};
+let _downloadCancelled = false;
 
 async function downloadAllAudio(readerKey, onProgress) {
-  if (_downloadInProgress) return;
-  _downloadInProgress = true;
-  _downloadCallbacks.onProgress = onProgress;
+  if (_downloadInProgress) throw new Error('التحميل جارٍ بالفعل');
   
-  const readers = window.RecitersModule.readers;
-  const reader = readers[readerKey];
+  _downloadInProgress = true;
+  _downloadCancelled = false;
+
+  const reader = window.READERS[readerKey];
   if (!reader) {
     _downloadInProgress = false;
-    throw new Error('قارئ غير معروف');
+    throw new Error('قارئ غير معروف: ' + readerKey);
   }
 
-  const quran = window.QURAN_DATA_CACHE; // تأتي من التطبيق الرئيسي
+  const quran = window.QURAN_DATA_CACHE;
   if (!quran || !quran.surahs) {
     _downloadInProgress = false;
-    throw new Error('المصحف غير محمّل');
+    throw new Error('المصحف غير محمّل في الذاكرة');
   }
 
   const total = 114;
@@ -120,20 +120,39 @@ async function downloadAllAudio(readerKey, onProgress) {
 
   try {
     for (let s = 1; s <= 114; s++) {
+      if (_downloadCancelled) break;
+
       const key = readerKey + '_' + s;
       const exists = await hasAudioFile(key);
       
       if (exists) {
         completed++;
-        if (onProgress) onProgress({ completed, total, current: s, status: 'skip' });
+        if (onProgress) onProgress({ 
+          completed, total, current: s, status: 'skip',
+          surahName: quran.surahs[s - 1]?.name || '' 
+        });
         continue;
       }
 
       try {
-        // للقراء من نوع سورة كاملة
-        const url = reader.pattern.replace('{S}', String(s).padStart(3, '0'));
+        let url;
+        const S = String(s).padStart(3, '0');
+
+        // دعم النوعين: ayah و surah
+        if (reader.type === 'surah') {
+          url = reader.pattern.replace(/\{S\}/g, S);
+        } else {
+          // ayah type — للسور كاملة، نأخذ أول آية فقط كعينة
+          // (لأن السور الكاملة تحتوي على مئات الآيات)
+          const A = '001';
+          url = reader.pattern.replace(/\{S\}/g, S).replace(/\{A\}/g, A);
+        }
         
-        if (onProgress) onProgress({ completed, total, current: s, status: 'downloading' });
+        if (onProgress) onProgress({ 
+          completed, total, current: s, status: 'downloading',
+          surahName: quran.surahs[s - 1]?.name || '',
+          url: url
+        });
 
         const res = await fetch(url, {
           method: 'GET',
@@ -153,7 +172,8 @@ async function downloadAllAudio(readerKey, onProgress) {
           total, 
           current: s, 
           status: 'done',
-          size: blob.size 
+          size: blob.size,
+          surahName: quran.surahs[s - 1]?.name || ''
         });
       } catch (e) {
         failed++;
@@ -163,12 +183,13 @@ async function downloadAllAudio(readerKey, onProgress) {
           total, 
           current: s, 
           status: 'failed', 
-          error: e.message 
+          error: e.message,
+          surahName: quran.surahs[s - 1]?.name || ''
         });
       }
       
       // استراحة قصيرة لتجنب rate limiting
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 300));
     }
   } finally {
     _downloadInProgress = false;
@@ -182,6 +203,10 @@ async function downloadAllAudio(readerKey, onProgress) {
       finishedAt: Date.now() 
     });
   }
+}
+
+function cancelDownload() {
+  _downloadCancelled = true;
 }
 
 async function deleteAllAudio() {
@@ -202,4 +227,5 @@ window.AudioDownloader = {
   has: hasAudioFile,
   get: getAudioFile,
   isDownloading: () => _downloadInProgress,
+  cancel: cancelDownload,
 };

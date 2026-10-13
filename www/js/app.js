@@ -768,36 +768,73 @@ async function startAudioDownload() {
     return showUpdateToast('⚠ التحميل جارٍ بالفعل');
   }
 
-  if (!confirm('سيتم تحميل ~800 ميجابايت.\n\nيُفضل استخدام WiFi.\n\nهل تريد المتابعة؟')) {
+  const reader = window.READERS[state.reader];
+  if (!reader) {
+    return showUpdateToast('❌ اختر قارئاً أولاً');
+  }
+
+  // تنبيه للقراء من نوع ayah
+  let warning = 'سيتم تحميل ' + reader.name + '\n\n';
+  warning += 'الحجم المتوقع: ~800 ميجابايت\n';
+  warning += 'الوقت المتوقع: 20-60 دقيقة\n\n';
+  warning += '💡 يُنصح باستخدام WiFi\n';
+  warning += '(لكنه يعمل على أي شبكة)\n\n';
+  warning += 'هل تريد المتابعة؟';
+
+  if (!confirm(warning)) {
     return;
   }
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري التحميل...'; }
 
-  // اجعل المصحف متاحاً للمحمّل
   window.QURAN_DATA_CACHE = state.data;
+  let lastSize = 0;
 
   try {
     await AudioDownloader.downloadAll(state.reader, (progress) => {
       const pct = Math.round((progress.completed / progress.total) * 100);
       if (fill) fill.style.width = pct + '%';
+      
+      // احسب الحجم
+      if (progress.size) lastSize += progress.size;
+      const sizeMB = (lastSize / 1024 / 1024).toFixed(1);
+      
       if (label) {
         const status = progress.status === 'done' ? '✅'
           : progress.status === 'failed' ? '❌'
           : progress.status === 'skip' ? '⏭'
           : '⏳';
-        label.textContent = status + ' سورة ' + progress.current + ' — ' + progress.completed + '/' + progress.total + ' (' + pct + '%)';
+        label.innerHTML = status + ' سورة ' + progress.current + 
+          ' (' + (progress.surahName || '') + ')<br>' +
+          progress.completed + ' / ' + progress.total + 
+          ' — ' + pct + '% — ' + sizeMB + ' MB';
+      }
+      
+      // إشعار للنجاح
+      if (progress.status === 'done') {
+        console.log('✓ تم تحميل سورة ' + progress.current);
+      }
+      if (progress.status === 'failed') {
+        console.warn('✗ فشلت سورة ' + progress.current + ': ' + progress.error);
       }
     });
 
-    showUpdateToast('✅ اكتمل تحميل المصحف الصوتي');
+    const stats = await AudioDownloader.getStats();
+    const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
+    
+    showUpdateToast('✅ اكتمل! ' + stats.count + '/114 سورة — ' + sizeMB + ' MB');
     await updateAudioStatsUI();
-    if (btn) { btn.textContent = '✅ مكتمل'; btn.style.background = '#27ae60'; }
+    
+    if (btn) { 
+      btn.textContent = '✅ مكتمل (' + sizeMB + ' MB)'; 
+      btn.style.background = '#27ae60'; 
+    }
   } catch (e) {
     showUpdateToast('❌ فشل: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '⬇️ إعادة المحاولة'; }
   }
 }
+
 
 async function deleteAudioDownload() {
   if (!confirm('سيتم حذف جميع الملفات الصوتية المحمّلة. هل أنت متأكد؟')) return;
