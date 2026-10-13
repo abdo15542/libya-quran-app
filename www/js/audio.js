@@ -34,6 +34,35 @@ const QuranAudio = {
     return audio;
   },
 
+
+  // حل بديل: جلب الصوت كـ base64 ثم تشغيله (يتجاوز مشاكل Capacitor)
+  async playViaBase64(url) {
+    try {
+      console.log('🔄 محاولة التشغيل عبر base64...');
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const audio = new Audio();
+      audio.src = blobUrl;
+      audio.preload = 'auto';
+
+      audio.onended = () => this._onEnd();
+      audio.onerror = () => this._emit('error', { url, error: audio.error });
+
+      this.player = audio;
+      this.currentSrc = url;
+
+      await audio.play();
+      this._emit('success', { url });
+      console.log('✅ تم التشغيل عبر base64');
+    } catch (e) {
+      console.warn('❌ فشل base64:', e.message);
+      this._emit('error', { url, error: e.message });
+    }
+  },
+
   async play(url) {
     if (!url) return;
 
