@@ -342,11 +342,8 @@ private fun AudioScreen() {
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            player?.release()
-            player = null
-        }
+    DisposableEffect(player) {
+        onDispose { player?.release() }
     }
     LaunchedEffect(player, playing, prepared) {
         while (playing && prepared) {
