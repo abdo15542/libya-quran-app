@@ -21,4 +21,11 @@ if 'loadUrl("http' in source or 'setDataSource("http' in source or "OkHttpClient
     errors.append("Unexpected network playback or HTTP client found in runtime Kotlin source.")
 if errors:
     sys.exit("\n".join(errors))
-print("Project contract passed: no network permission, no AI/ML dependency, Arabic RTL, local Mushaf assets.")
+audio_dir = pathlib.Path("app/src/main/assets/audio")
+audio_files = [audio_dir / f"{n:03d}.mp3" for n in range(1, 115)]
+missing_audio = [str(p) for p in audio_files if not p.is_file() or p.stat().st_size < 2048]
+if missing_audio:
+    errors.append(f"Embedded recitation library incomplete ({len(missing_audio)} missing/invalid surah files).")
+if errors:
+    sys.exit("\\n".join(errors))
+print("Project contract passed: offline/no-AI, Arabic RTL, local Mushaf, and 114 embedded surah audio files.")
