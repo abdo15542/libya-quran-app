@@ -25,14 +25,25 @@ def download(url, target):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "WirdOfflineQuran/1.0"})
             with urllib.request.urlopen(req, timeout=120) as response:
-                data = response.read()
                 content_type = response.headers.get("Content-Type", "").lower()
-            if len(data) < 2048:
-                raise ValueError(f"Audio response is too small ({len(data)} bytes)")
-            if "text/html" in content_type or data.lstrip().lower().startswith(b"<!doctype html"):
-                raise ValueError("Audio URL returned an HTML page, not audio")
-            target.write_bytes(data)
-            return len(data)
+                first = response.read(4096)
+                if len(first) < 2048:
+                    raise ValueError(f"Audio response is too small ({len(first)} bytes)")
+                if "text/html" in content_type or first.lstrip().lower().startswith((b"<!doctype html", b"<html")):
+                    raise ValueError("Audio URL returned an HTML page, not audio")
+                total = len(first)
+                with target.open("wb") as output:
+                    output.write(first)
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output.write(chunk)
+                        total += len(chunk)
+            if total < 2048:
+                target.unlink(missing_ok=True)
+                raise ValueError(f"Audio response is too small ({total} bytes)")
+            return total
         except Exception as exc:
             last_error = exc
             if attempt < 3:
@@ -54,7 +65,7 @@ def main():
     for reciter in candidates:
         for moshaf in reciter.get("moshaf", []):
             available = {int(x) for x in str(moshaf.get("surah_list", "")).split(",") if x.strip().isdigit()}
-            if moshaf.get("surah_total") == 114 and set(range(1, 115)).issubset(available):
+            if int(moshaf.get("surah_total", 0)) == 114 and set(range(1, 115)).issubset(available):
                 choices.append((reciter, moshaf))
     if not choices:
         raise SystemExit("No complete 114-surah Mishary Alafasy recording was found in the MP3Quran catalogue.")
