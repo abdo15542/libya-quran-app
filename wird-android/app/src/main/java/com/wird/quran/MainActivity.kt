@@ -312,7 +312,6 @@ private fun AudioScreen() {
             try {
                 context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) { }
-            player?.release()
             player = null
             prepared = false
             playing = false
@@ -334,7 +333,6 @@ private fun AudioScreen() {
                 player = next
                 next.prepareAsync()
             } catch (e: Exception) {
-                player?.release()
                 player = null
                 selectedUri = null
                 prepared = false
