@@ -517,7 +517,7 @@ private fun SettingsScreen(darkMode: Boolean, onDarkMode: (Boolean) -> Unit) {
                 Text("حول وِرد", fontWeight = FontWeight.Bold, color = EmeraldLight)
                 Text("تطبيق محلي دون ذكاء اصطناعي أو أذونات شبكة. النص القرآني من مشروع Tanzil ويُعرض دون تعديل.", fontSize = 14.sp, lineHeight = 22.sp)
                 Text("المصدر: https://tanzil.net", fontSize = 12.sp)
-                Text("صفحات المصحف الأصلية مضمّنة محليًا. مشغّل الصوت يعمل مع ملفات التلاوة المحفوظة على الجهاز؛ مكتبة قارئ مدمجة ستضاف عند اعتماد حزمة صوت مرخّصة مناسبة الحجم.", fontSize = 12.sp, lineHeight = 19.sp)
+                Text("صفحات المصحف والتلاوة المدمجة تُضمّنان داخل حزمة التطبيق أثناء البناء. بعد التثبيت تعمل القراءة والبحث والمحفوظات والتلاوة دون اتصال بالإنترنت.", fontSize = 12.sp, lineHeight = 19.sp)
             }
         }
     }
