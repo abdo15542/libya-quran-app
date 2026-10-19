@@ -139,7 +139,7 @@ private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, o
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("مصمم ليعمل دون إنترنت", fontWeight = FontWeight.Bold, color = EmeraldLight)
-                Text("النص والبحث والمفضلة محلية. ملفات الصوت وصفحات المصحف الأصلية تحتاج إلى موارد مرخصة قبل إرفاقها.", fontSize = 13.sp, lineHeight = 20.sp)
+                Text("النص والبحث والمفضلة وصفحات المصحف الأصلية تعمل محليًا. التلاوة الصوتية هي الميزة المتبقية التي تحتاج إلى ملفات قارئ مرخصة ومضمّنة.", fontSize = 13.sp, lineHeight = 20.sp)
             }
         }
     }
