@@ -1,6 +1,7 @@
 package com.wird.quran
 
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -22,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.viewinterop.AndroidView
 import java.text.Normalizer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +61,7 @@ private fun WirdApp() {
     val surahs = remember { loadSurahs(context) }
     var tab by remember { mutableStateOf("home") }
     var selectedSurah by remember { mutableIntStateOf(prefs.getInt("last_surah", 1)) }
+    var mushafPage by remember { mutableIntStateOf(prefs.getInt("last_page", 1).coerceIn(1, 604)) }
     var query by remember { mutableStateOf("") }
     var fontSize by remember { mutableFloatStateOf(prefs.getFloat("font_size", 27f)) }
     var darkMode by remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
@@ -85,7 +88,7 @@ private fun WirdApp() {
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
-                    "home" -> HomeScreen(surahs, selectedSurah, { tab = "reader" }, { selectedSurah = it; prefs.edit().putInt("last_surah", it).apply(); tab = "reader" }, { tab = "quran" })
+                    "home" -> HomeScreen(surahs, selectedSurah, { tab = "reader" }, { selectedSurah = it; prefs.edit().putInt("last_surah", it).apply(); tab = "reader" }, { tab = "quran" }, { tab = "pages" })
                     "quran" -> SurahList(surahs) { selectedSurah = it; prefs.edit().putInt("last_surah", it).apply(); tab = "reader" }
                     "reader" -> ReaderScreen(surahs.getOrNull(selectedSurah - 1), fontSize, { s, a -> bookmarks.contains(s.toString() + ":" + a) }, { s, a ->
                         val key = s.toString() + ":" + a
@@ -95,6 +98,7 @@ private fun WirdApp() {
                     "search" -> SearchScreen(surahs, query, { query = it }) { s -> selectedSurah = s; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" }
                     "saved" -> BookmarksScreen(bookmarks.toList(), surahs) { s -> selectedSurah = s; tab = "reader" }
                     "audio" -> AudioScreen()
+                    "pages" -> MushafPagesScreen(mushafPage) { page -> mushafPage = page; prefs.edit().putInt("last_page", page).apply() }
                     "settings" -> SettingsScreen(darkMode) { darkMode = it; prefs.edit().putBoolean("dark_mode", it).apply() }
                 }
             }
@@ -115,7 +119,7 @@ private fun loadSurahs(context: android.content.Context): List<Surah> = try {
 } catch (_: Exception) { emptyList() }
 
 @Composable
-private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, onOpen: (Int) -> Unit, onBrowse: () -> Unit) {
+private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, onOpen: (Int) -> Unit, onBrowse: () -> Unit, onPages: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.fillMaxWidth().background(Emerald, RoundedCornerShape(26.dp)).padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", color = Gold, fontSize = 18.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -128,9 +132,10 @@ private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, o
         }
         Text("ابدأ رحلتك", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Tile("المصحف", "114 سورة", Modifier.weight(1f), onBrowse)
+            Tile("النص القرآني", "114 سورة مع البحث", Modifier.weight(1f), onBrowse)
             Tile("سورة الفاتحة", "ابدأ القراءة", Modifier.weight(1f)) { onOpen(1) }
         }
+        Tile("المصحف بالصفحات الأصلية", "604 صفحة • يعمل دون إنترنت", Modifier.fillMaxWidth(), onPages)
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("مصمم ليعمل دون إنترنت", fontWeight = FontWeight.Bold, color = EmeraldLight)
@@ -239,6 +244,46 @@ private fun BookmarksScreen(bookmarks: List<String>, surahs: List<Surah>, open: 
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MushafPagesScreen(page: Int, onPageChange: (Int) -> Unit) {
+    val safePage = page.coerceIn(1, 604)
+    val pageUrl = "file:///android_asset/mushaf/" + safePage.toString().padStart(3, '0') + ".svg"
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { onPageChange(1) }, enabled = safePage > 1) { Text("الأولى") }
+            Text("صفحة $safePage من 604", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            TextButton(onClick = { onPageChange(604) }, enabled = safePage < 604) { Text("الأخيرة") }
+        }
+        Card(Modifier.weight(1f).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(12.dp)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    WebView(context).apply {
+                        settings.javaScriptEnabled = false
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = false
+                        setBackgroundColor(android.graphics.Color.WHITE)
+                        tag = pageUrl
+                        loadUrl(pageUrl)
+                    }
+                },
+                update = { view ->
+                    if (view.tag != pageUrl) {
+                        view.tag = pageUrl
+                        view.loadUrl(pageUrl)
+                    }
+                }
+            )
+        }
+        Slider(value = safePage.toFloat(), onValueChange = { onPageChange(it.toInt().coerceIn(1, 604)) }, valueRange = 1f..604f, steps = 602)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { onPageChange((safePage - 1).coerceAtLeast(1)) }, enabled = safePage > 1) { Text("السابق") }
+            OutlinedButton(onClick = { onPageChange((safePage + 1).coerceAtMost(604)) }, enabled = safePage < 604) { Text("التالي") }
+        }
+        Text("صفحات مصحف المدينة النبوية — رواية حفص. تُحمّل ملفات الصفحات وقت بناء APK ثم تُعرض محليًا.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
