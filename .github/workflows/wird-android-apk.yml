@@ -40,6 +40,7 @@ jobs:
           python3 tools/validate_quran.py
           python3 tools/fetch_mushaf_pages.py
           python3 tools/validate_mushaf_pages.py
+          python3 tools/validate_project.py
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
