@@ -1,6 +1,11 @@
 name: Build Wird Android APK
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "wird-android/**"
+      - ".github/workflows/wird-android-apk.yml"
   push:
     branches: [wird-android-offline]
     paths:
