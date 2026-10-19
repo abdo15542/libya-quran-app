@@ -6,15 +6,14 @@ on:
     paths:
       - "wird-android/**"
       - ".github/workflows/wird-android-apk.yml"
-  push:
-    branches: [wird-android-offline]
-    paths:
-      - "wird-android/**"
-      - ".github/workflows/wird-android-apk.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: wird-android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
