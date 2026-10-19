@@ -7,6 +7,10 @@ plugins {
 android {
     namespace = "com.wird.quran"
     compileSdk = 35
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
     defaultConfig {
         applicationId = "com.wird.quran"
         minSdk = 24
