@@ -27,5 +27,5 @@ missing_audio = [str(p) for p in audio_files if not p.is_file() or p.stat().st_s
 if missing_audio:
     errors.append(f"Embedded recitation library incomplete ({len(missing_audio)} missing/invalid surah files).")
 if errors:
-    sys.exit("\\n".join(errors))
+    sys.exit("\n".join(errors))
 print("Project contract passed: offline/no-AI, Arabic RTL, local Mushaf, and 114 embedded surah audio files.")
