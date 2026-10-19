@@ -61,7 +61,7 @@ if sum(actual_counts) != 6236:
     raise SystemExit(f"Expected 6236 verses, received {sum(actual_counts)}; refusing to package Quran text.")
 payload = {
     "source": "Tanzil Quran Text (Uthmani), https://tanzil.net",
-    "copyright": "Tanzil Quran Text\\nCopyright (C) 2007-2021 Tanzil Project\\nLicense: Creative Commons Attribution 3.0\\nPermission is granted to copy and distribute verbatim copies of this text, but CHANGING IT IS NOT ALLOWED. The source (Tanzil Project) must be clearly indicated and a link to https://tanzil.net must be provided. This notice must accompany copies containing the text. See https://tanzil.net/docs/Text_License.",
+    "copyright": "Tanzil Quran Text\nCopyright (C) 2007-2021 Tanzil Project\nLicense: Creative Commons Attribution 3.0\nPermission is granted to copy and distribute verbatim copies of this text, but CHANGING IT IS NOT ALLOWED. The source (Tanzil Project) must be clearly indicated and a link to https://tanzil.net must be provided. This notice must accompany copies containing the text. See https://tanzil.net/docs/Text_License.",
     "surahs": [{"number": i + 1, "name": names[i], "verses": verses[i]} for i in range(114)]
 }
 out = pathlib.Path("app/src/main/assets/quran.json")
