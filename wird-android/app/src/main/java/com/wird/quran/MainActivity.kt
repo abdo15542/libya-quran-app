@@ -20,6 +20,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import java.text.Normalizer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,7 +47,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(18, 55, 41)
         window.navigationBarColor = android.graphics.Color.rgb(18, 55, 41)
-        setContent { WirdApp() }
+        setContent { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { WirdApp() } }
     }
 }
 
@@ -194,7 +197,14 @@ private fun ReaderScreen(surah: Surah?, fontSize: Float, isSaved: (Int, Int) -> 
 
 @Composable
 private fun SearchScreen(surahs: List<Surah>, query: String, setQuery: (String) -> Unit, open: (Int) -> Unit) {
-    val results = remember(query, surahs) { if (query.trim().length < 2) emptyList() else surahs.flatMap { s -> s.verses.filter { it.text.contains(query.trim()) }.map { Pair(s, it) } }.take(100) }
+    val normalizedQuery = remember(query) { normalizeArabicForSearch(query.trim()) }
+    val results = remember(normalizedQuery, surahs) {
+        if (normalizedQuery.length < 2) emptyList()
+        else surahs.flatMap { s ->
+            s.verses.filter { normalizeArabicForSearch(it.text).contains(normalizedQuery) }
+                .map { Pair(s, it) }
+        }.take(100)
+    }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("البحث في القرآن", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         OutlinedTextField(query, setQuery, Modifier.fillMaxWidth(), label = { Text("اكتب كلمة أو عبارة") }, singleLine = true)
@@ -264,4 +274,23 @@ private fun SettingsScreen(darkMode: Boolean, onDarkMode: (Boolean) -> Unit) {
             }
         }
     }
+}
+
+
+/**
+ * Search-only normalization. Displayed Quran text is never changed.
+ * This makes search tolerant of Arabic harakat and common alif/ya variants.
+ */
+private fun normalizeArabicForSearch(value: String): String {
+    val decomposed = Normalizer.normalize(value, Normalizer.Form.NFD)
+    return decomposed
+        .replace(Regex("[\\u064B-\\u065F\\u0670\\u06D6-\\u06ED]"), "")
+        .replace("ـ", "")
+        .replace('أ', 'ا')
+        .replace('إ', 'ا')
+        .replace('آ', 'ا')
+        .replace('ٱ', 'ا')
+        .replace('ى', 'ي')
+        .replace('ؤ', 'و')
+        .replace('ئ', 'ي')
 }
