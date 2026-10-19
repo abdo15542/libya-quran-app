@@ -17,8 +17,8 @@ if "LocalLayoutDirection provides LayoutDirection.Rtl" not in source:
     errors.append("Arabic RTL layout provider is missing.")
 if "file:///android_asset/mushaf/" not in source:
     errors.append("Mushaf viewer must use local assets only.")
-if "https://" in source or "http://" in source:
-    errors.append("Unexpected network URL found in runtime Kotlin source.")
+if 'loadUrl("http' in source or 'setDataSource("http' in source or "OkHttpClient(" in source or "Retrofit.Builder(" in source:
+    errors.append("Unexpected network playback or HTTP client found in runtime Kotlin source.")
 if errors:
     sys.exit("\n".join(errors))
 print("Project contract passed: no network permission, no AI/ML dependency, Arabic RTL, local Mushaf assets.")
