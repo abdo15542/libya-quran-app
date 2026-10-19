@@ -1,9 +1,13 @@
 package com.wird.quran
 
 import android.os.Bundle
+import android.media.MediaPlayer
+import android.net.Uri
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.viewinterop.AndroidView
@@ -293,15 +298,127 @@ private fun MushafPagesScreen(page: Int, onPageChange: (Int) -> Unit) {
 
 @Composable
 private fun AudioScreen() {
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val context = LocalContext.current
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var prepared by remember { mutableStateOf(false) }
+    var playing by remember { mutableStateOf(false) }
+    var durationMs by remember { mutableIntStateOf(1) }
+    var positionMs by remember { mutableIntStateOf(0) }
+    var seekTargetMs by remember { mutableIntStateOf(0) }
+
+    val chooseAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            player?.release()
+            player = null
+            prepared = false
+            playing = false
+            durationMs = 1
+            positionMs = 0
+            selectedUri = uri
+            try {
+                val next = MediaPlayer()
+                next.setOnPreparedListener { mp ->
+                    durationMs = mp.duration.coerceAtLeast(1)
+                    prepared = true
+                    playing = false
+                }
+                next.setOnCompletionListener { mp ->
+                    playing = false
+                    positionMs = mp.duration.coerceAtLeast(0)
+                }
+                next.setDataSource(context, uri)
+                player = next
+                next.prepareAsync()
+            } catch (e: Exception) {
+                player?.release()
+                player = null
+                selectedUri = null
+                prepared = false
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            player?.release()
+            player = null
+        }
+    }
+    LaunchedEffect(player, playing, prepared) {
+        while (playing && prepared) {
+            player?.let { mp ->
+                if (mp.isPlaying) positionMs = mp.currentPosition.coerceIn(0, durationMs)
+            }
+            delay(500)
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("التلاوة الصوتية", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Column(Modifier.fillMaxWidth().background(Emerald, RoundedCornerShape(24.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Default.Headphones, contentDescription = null, tint = Gold, modifier = Modifier.size(54.dp))
-            Text("قارئ واحد • تشغيل محلي", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            Text("ستظهر أدوات التشغيل بعد إضافة ملفات التلاوة المرخصة إلى موارد التطبيق.", color = Color(0xFFD9E5DC), textAlign = TextAlign.Center, lineHeight = 22.sp)
+            Text("مشغّل تلاوة محلي", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("اختر ملف تلاوة صوتيًا محفوظًا على جهازك. التشغيل لا يحتاج إلى الإنترنت.", color = Color(0xFFD9E5DC), textAlign = TextAlign.Center, lineHeight = 22.sp)
+            Button(onClick = { chooseAudio.launch(arrayOf("audio/*")) }) { Text("اختيار ملف التلاوة") }
         }
-        Text("لم تُضمّن تسجيلات صوتية في هذا الإصدار لأن حقوق إعادة توزيع التسجيلات لم تُثبت بعد. التطبيق لا يبث الصوت من الإنترنت.", fontSize = 14.sp, lineHeight = 22.sp)
+        Text(selectedUri?.lastPathSegment?.substringAfterLast('/') ?: "لم يتم اختيار ملف صوتي بعد", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        if (selectedUri != null) {
+            Slider(
+                value = positionMs.coerceIn(0, durationMs).toFloat(),
+                onValueChange = { seekTargetMs = it.toInt(); positionMs = seekTargetMs },
+                onValueChangeFinished = {
+                    if (prepared) {
+                        player?.seekTo(seekTargetMs.coerceIn(0, durationMs))
+                    }
+                },
+                valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
+                enabled = prepared
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatAudioTime(positionMs))
+                Text(formatAudioTime(durationMs))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = {
+                    if (prepared) {
+                        player?.seekTo((player?.currentPosition ?: 0) - 10000)
+                        positionMs = (positionMs - 10000).coerceAtLeast(0)
+                    }
+                }, enabled = prepared) { Text("−10 ث") }
+                Spacer(Modifier.width(12.dp))
+                Button(onClick = {
+                    if (prepared) {
+                        val mp = player
+                        if (playing) {
+                            mp?.pause()
+                            playing = false
+                        } else {
+                            mp?.start()
+                            playing = true
+                        }
+                    }
+                }, enabled = prepared) { Text(if (playing) "إيقاف مؤقت" else "تشغيل") }
+                Spacer(Modifier.width(12.dp))
+                OutlinedButton(onClick = {
+                    if (prepared) {
+                        player?.seekTo((player?.currentPosition ?: 0) + 10000)
+                        positionMs = (positionMs + 10000).coerceAtMost(durationMs)
+                    }
+                }, enabled = prepared) { Text("+10 ث") }
+            }
+            if (!prepared) Text("جارٍ تجهيز الملف الصوتي…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
+        }
+        Text("ملاحظة: لا يحتوي APK الحالي على مكتبة تلاوات مدمجة؛ يمكنك تشغيل ملفات القارئ التي لديك محليًا. لا يتم بث أي صوت ولا يُطلب إذن الإنترنت.", fontSize = 13.sp, lineHeight = 21.sp)
     }
+}
+
+private fun formatAudioTime(milliseconds: Int): String {
+    val totalSeconds = (milliseconds.coerceAtLeast(0) / 1000)
+    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }
 
 @Composable
@@ -319,7 +436,7 @@ private fun SettingsScreen(darkMode: Boolean, onDarkMode: (Boolean) -> Unit) {
                 Text("حول وِرد", fontWeight = FontWeight.Bold, color = EmeraldLight)
                 Text("تطبيق محلي دون ذكاء اصطناعي أو أذونات شبكة. النص القرآني من مشروع Tanzil ويُعرض دون تعديل.", fontSize = 14.sp, lineHeight = 22.sp)
                 Text("المصدر: https://tanzil.net", fontSize = 12.sp)
-                Text("صور صفحات المصحف الأصلية والتلاوة الصوتية غير مرفقة حتى تكتمل مراجعة تراخيص إعادة التوزيع.", fontSize = 12.sp, lineHeight = 19.sp)
+                Text("صفحات المصحف الأصلية مضمّنة محليًا. مشغّل الصوت يعمل مع ملفات التلاوة المحفوظة على الجهاز؛ مكتبة قارئ مدمجة ستضاف عند اعتماد حزمة صوت مرخّصة مناسبة الحجم.", fontSize = 12.sp, lineHeight = 19.sp)
             }
         }
     }
