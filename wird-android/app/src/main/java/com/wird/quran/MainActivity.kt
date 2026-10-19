@@ -252,7 +252,7 @@ private fun MushafPagesScreen(page: Int, onPageChange: (Int) -> Unit) {
     val safePage = page.coerceIn(1, 604)
     val pageFile = safePage.toString().padStart(3, '0') + ".svg"
     val baseUrl = "file:///android_asset/mushaf/"
-    val pageHtml = "<!doctype html><html><head><meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes\\"><style>html,body{margin:0;padding:0;background:#fff}img{width:100%;height:auto;display:block}</style></head><body><img src=\\"$pageFile\\" alt=\\"صفحة المصحف\\"></body></html>"
+    val pageHtml = "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes'><style>html,body{margin:0;padding:0;background:#fff}img{width:100%;height:auto;display:block}</style></head><body><img src='$pageFile' alt='صفحة المصحف'></body></html>"
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { onPageChange(1) }, enabled = safePage > 1) { Text("الأولى") }
