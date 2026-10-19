@@ -1,0 +1,10 @@
+Third-party notices for Wird
+
+Quran text:
+Tanzil Quran Text (Uthmani)
+Source: https://tanzil.net
+License: Creative Commons Attribution 3.0
+Terms: The text must be copied verbatim and must not be changed. The source and a link to Tanzil must be clearly indicated. This notice must accompany copies containing the text.
+License details: https://tanzil.net/docs/Text_License
+
+No mushaf page images or audio recordings are bundled in this source revision. Add them only after verifying and documenting redistribution rights for the exact files.
