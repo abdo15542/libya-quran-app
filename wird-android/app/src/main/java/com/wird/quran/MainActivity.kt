@@ -357,7 +357,6 @@ private fun AudioScreen() {
                     playing = false
                     prepared = false
                     playbackError = "تعذر تشغيل هذا الملف الصوتي. جرّب ملف MP3 أو M4A آخر."
-                    mp.release()
                     player = null
                     true
                 }
@@ -374,10 +373,14 @@ private fun AudioScreen() {
                 player = next
                 next.prepareAsync()
             } catch (_: Exception) {
-                next.release()
-                player = null
+                if (player === next) {
+                    player = null
+                } else {
+                    next.release()
+                }
                 selectedUri = null
                 prepared = false
+                playing = false
                 playbackError = "تعذر فتح الملف. اختر ملفًا صوتيًا صالحًا من جهازك."
             }
         }
