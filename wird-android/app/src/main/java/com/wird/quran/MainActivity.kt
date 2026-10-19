@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
@@ -101,7 +102,12 @@ private fun WirdApp() {
                         prefs.edit().putStringSet("bookmarks", bookmarks.toSet()).apply()
                     }, { fontSize = it; prefs.edit().putFloat("font_size", it).apply() }, { tab = "quran" })
                     "search" -> SearchScreen(surahs, query, { query = it }) { s -> selectedSurah = s; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" }
-                    "saved" -> BookmarksScreen(bookmarks.toList(), surahs) { s -> selectedSurah = s; tab = "reader" }
+                    "saved" -> BookmarksScreen(
+                        bookmarks.toList(),
+                        surahs,
+                        onOpen = { s -> selectedSurah = s; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" },
+                        onRemove = { key -> bookmarks.remove(key); prefs.edit().putStringSet("bookmarks", bookmarks.toSet()).apply() }
+                    )
                     "audio" -> AudioScreen()
                     "pages" -> MushafPagesScreen(mushafPage) { page -> mushafPage = page; prefs.edit().putInt("last_page", page).apply() }
                     "settings" -> SettingsScreen(darkMode) { darkMode = it; prefs.edit().putBoolean("dark_mode", it).apply() }
@@ -144,7 +150,7 @@ private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, o
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("مصمم ليعمل دون إنترنت", fontWeight = FontWeight.Bold, color = EmeraldLight)
-                Text("النص والبحث والمفضلة وصفحات المصحف الأصلية تعمل محليًا. التلاوة الصوتية هي الميزة المتبقية التي تحتاج إلى ملفات قارئ مرخصة ومضمّنة.", fontSize = 13.sp, lineHeight = 20.sp)
+                Text("النص والبحث والمفضلة وصفحات المصحف تعمل محليًا. مشغّل الصوت يشغّل ملفاتك المحلية؛ مكتبة قارئ مدمجة لم تُضمّن بعد.", fontSize = 13.sp, lineHeight = 20.sp)
             }
         }
     }
@@ -233,19 +239,44 @@ private fun SearchScreen(surahs: List<Surah>, query: String, setQuery: (String) 
 }
 
 @Composable
-private fun BookmarksScreen(bookmarks: List<String>, surahs: List<Surah>, open: (Int) -> Unit) {
+private fun BookmarksScreen(
+    bookmarks: List<String>,
+    surahs: List<Surah>,
+    onOpen: (Int) -> Unit,
+    onRemove: (String) -> Unit
+) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("المحفوظات", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        if (bookmarks.isEmpty()) Text("لم تحفظ آيات بعد. افتح المصحف واضغط «حفظ» بجوار الآية.")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(bookmarks.sorted()) { key ->
-                val parts = key.split(":")
-                val s = parts.getOrNull(0)?.toIntOrNull() ?: 1
-                val a = parts.getOrNull(1)?.toIntOrNull() ?: 1
-                val surah = surahs.getOrNull(s - 1)
-                val verse = surah?.verses?.find { it.number == a }
-                Card(Modifier.fillMaxWidth().clickable { open(s) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    Column(Modifier.padding(14.dp)) { Text((surah?.name ?: "سورة") + " • الآية " + a, fontWeight = FontWeight.Bold, color = EmeraldLight); Text(verse?.text ?: "", fontSize = 20.sp, lineHeight = 32.sp) }
+        Text("${bookmarks.size} آية محفوظة على جهازك", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
+        if (bookmarks.isEmpty()) {
+            Text("لم تحفظ آيات بعد. افتح القراءة واضغط «حفظ» بجوار الآية.", Modifier.padding(top = 16.dp))
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(
+                    bookmarks.sortedWith(
+                        compareBy<String> { it.substringBefore(':').toIntOrNull() ?: Int.MAX_VALUE }
+                            .thenBy { it.substringAfter(':').toIntOrNull() ?: Int.MAX_VALUE }
+                    ),
+                    key = { it }
+                ) { key ->
+                    val parts = key.split(":")
+                    val s = parts.getOrNull(0)?.toIntOrNull() ?: 1
+                    val a = parts.getOrNull(1)?.toIntOrNull() ?: 1
+                    val surah = surahs.getOrNull(s - 1)
+                    val verse = surah?.verses?.find { it.number == a }
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f).clickable { onOpen(s) }) {
+                                    Text((surah?.name ?: "سورة") + " • الآية " + a, fontWeight = FontWeight.Bold, color = EmeraldLight)
+                                }
+                                IconButton(onClick = { onRemove(key) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "إزالة الآية من المحفوظات", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            Text(verse?.text ?: "", Modifier.fillMaxWidth().clickable { onOpen(s) }, fontSize = 20.sp, lineHeight = 32.sp, textAlign = TextAlign.Right)
+                        }
+                    }
                 }
             }
         }
@@ -306,6 +337,7 @@ private fun AudioScreen() {
     var durationMs by remember { mutableIntStateOf(1) }
     var positionMs by remember { mutableIntStateOf(0) }
     var seekTargetMs by remember { mutableIntStateOf(0) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
 
     val chooseAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -318,8 +350,17 @@ private fun AudioScreen() {
             durationMs = 1
             positionMs = 0
             selectedUri = uri
+            playbackError = null
+            val next = MediaPlayer()
             try {
-                val next = MediaPlayer()
+                next.setOnErrorListener { mp, _, _ ->
+                    playing = false
+                    prepared = false
+                    playbackError = "تعذر تشغيل هذا الملف الصوتي. جرّب ملف MP3 أو M4A آخر."
+                    mp.release()
+                    player = null
+                    true
+                }
                 next.setOnPreparedListener { mp ->
                     durationMs = mp.duration.coerceAtLeast(1)
                     prepared = true
@@ -332,10 +373,12 @@ private fun AudioScreen() {
                 next.setDataSource(context, uri)
                 player = next
                 next.prepareAsync()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
+                next.release()
                 player = null
                 selectedUri = null
                 prepared = false
+                playbackError = "تعذر فتح الملف. اختر ملفًا صوتيًا صالحًا من جهازك."
             }
         }
     }
@@ -361,7 +404,8 @@ private fun AudioScreen() {
             Button(onClick = { chooseAudio.launch(arrayOf("audio/*")) }) { Text("اختيار ملف التلاوة") }
         }
         Text(selectedUri?.lastPathSegment?.substringAfterLast('/') ?: "لم يتم اختيار ملف صوتي بعد", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        if (selectedUri != null) {
+        playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        if (selectedUri != null && player != null) {
             Slider(
                 value = positionMs.coerceIn(0, durationMs).toFloat(),
                 onValueChange = { seekTargetMs = it.toInt(); positionMs = seekTargetMs },
