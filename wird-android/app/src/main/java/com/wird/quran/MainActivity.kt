@@ -67,6 +67,7 @@ private fun WirdApp() {
     val surahs = remember { loadSurahs(context) }
     var tab by remember { mutableStateOf("home") }
     var selectedSurah by remember { mutableIntStateOf(prefs.getInt("last_surah", 1)) }
+    var selectedVerse by remember { mutableIntStateOf(1) }
     var mushafPage by remember { mutableIntStateOf(prefs.getInt("last_page", 1).coerceIn(1, 604)) }
     var query by remember { mutableStateOf("") }
     var fontSize by remember { mutableFloatStateOf(prefs.getFloat("font_size", 27f)) }
@@ -96,16 +97,16 @@ private fun WirdApp() {
                 when (tab) {
                     "home" -> HomeScreen(surahs, selectedSurah, { tab = "reader" }, { selectedSurah = it; prefs.edit().putInt("last_surah", it).apply(); tab = "reader" }, { tab = "quran" }, { tab = "pages" })
                     "quran" -> SurahList(surahs) { selectedSurah = it; prefs.edit().putInt("last_surah", it).apply(); tab = "reader" }
-                    "reader" -> ReaderScreen(surahs.getOrNull(selectedSurah - 1), fontSize, { s, a -> bookmarks.contains(s.toString() + ":" + a) }, { s, a ->
+                    "reader" -> ReaderScreen(surahs.getOrNull(selectedSurah - 1), selectedVerse, fontSize, { s, a -> bookmarks.contains(s.toString() + ":" + a) }, { s, a ->
                         val key = s.toString() + ":" + a
                         if (bookmarks.contains(key)) bookmarks.remove(key) else bookmarks.add(key)
                         prefs.edit().putStringSet("bookmarks", bookmarks.toSet()).apply()
                     }, { fontSize = it; prefs.edit().putFloat("font_size", it).apply() }, { tab = "quran" })
-                    "search" -> SearchScreen(surahs, query, { query = it }) { s -> selectedSurah = s; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" }
+                    "search" -> SearchScreen(surahs, query, { query = it }) { s, a -> selectedSurah = s; selectedVerse = a; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" }
                     "saved" -> BookmarksScreen(
                         bookmarks.toList(),
                         surahs,
-                        onOpen = { s -> selectedSurah = s; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" },
+                        onOpen = { s, a -> selectedSurah = s; selectedVerse = a; prefs.edit().putInt("last_surah", s).apply(); tab = "reader" },
                         onRemove = { key -> bookmarks.remove(key); prefs.edit().putStringSet("bookmarks", bookmarks.toSet()).apply() }
                     )
                     "audio" -> AudioScreen()
@@ -184,7 +185,7 @@ private fun SurahList(surahs: List<Surah>, onSelect: (Int) -> Unit) {
 }
 
 @Composable
-private fun ReaderScreen(surah: Surah?, fontSize: Float, isSaved: (Int, Int) -> Boolean, save: (Int, Int) -> Unit, setFont: (Float) -> Unit, back: () -> Unit) {
+private fun ReaderScreen(surah: Surah?, initialVerse: Int, fontSize: Float, isSaved: (Int, Int) -> Boolean, save: (Int, Int) -> Unit, setFont: (Float) -> Unit, back: () -> Unit) {
     if (surah == null) { Column(Modifier.padding(20.dp)) { Text("تعذّر تحميل النص القرآني."); TextButton(onClick = back) { Text("العودة للفهرس") } }; return }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -195,7 +196,8 @@ private fun ReaderScreen(surah: Surah?, fontSize: Float, isSaved: (Int, Int) -> 
         Text("حجم الخط", fontSize = 12.sp)
         Slider(value = fontSize, onValueChange = setFont, valueRange = 20f..38f)
         HorizontalDivider(color = Gold.copy(alpha = .6f))
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialVerse.coerceIn(1, surah.verses.size))
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("سُورَةُ " + surah.name, Modifier.fillMaxWidth().padding(vertical = 12.dp), textAlign = TextAlign.Center, color = Gold, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
             items(surah.verses) { v ->
                 Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp)).padding(14.dp)) {
@@ -212,7 +214,7 @@ private fun ReaderScreen(surah: Surah?, fontSize: Float, isSaved: (Int, Int) -> 
 }
 
 @Composable
-private fun SearchScreen(surahs: List<Surah>, query: String, setQuery: (String) -> Unit, open: (Int) -> Unit) {
+private fun SearchScreen(surahs: List<Surah>, query: String, setQuery: (String) -> Unit, open: (Int, Int) -> Unit) {
     val normalizedQuery = remember(query) { normalizeArabicForSearch(query.trim()) }
     val results = remember(normalizedQuery, surahs) {
         if (normalizedQuery.length < 2) emptyList()
@@ -227,7 +229,7 @@ private fun SearchScreen(surahs: List<Surah>, query: String, setQuery: (String) 
         Text(if (query.trim().length < 2) "اكتب حرفين على الأقل لبدء البحث." else "النتائج: " + results.size, Modifier.padding(vertical = 10.dp), fontSize = 12.sp)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(results) { result ->
-                Card(Modifier.fillMaxWidth().clickable { open(result.first.number) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Card(Modifier.fillMaxWidth().clickable { open(result.first.number, result.second.number) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(result.first.name + " • الآية " + result.second.number, color = EmeraldLight, fontWeight = FontWeight.Bold)
                         Text(result.second.text, fontSize = 20.sp, lineHeight = 34.sp, textAlign = TextAlign.Right)
@@ -242,7 +244,7 @@ private fun SearchScreen(surahs: List<Surah>, query: String, setQuery: (String) 
 private fun BookmarksScreen(
     bookmarks: List<String>,
     surahs: List<Surah>,
-    onOpen: (Int) -> Unit,
+    onOpen: (Int, Int) -> Unit,
     onRemove: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -267,14 +269,14 @@ private fun BookmarksScreen(
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f).clickable { onOpen(s) }) {
+                                Column(Modifier.weight(1f).clickable { onOpen(s, a) }) {
                                     Text((surah?.name ?: "سورة") + " • الآية " + a, fontWeight = FontWeight.Bold, color = EmeraldLight)
                                 }
                                 IconButton(onClick = { onRemove(key) }) {
                                     Icon(Icons.Default.Delete, contentDescription = "إزالة الآية من المحفوظات", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
-                            Text(verse?.text ?: "", Modifier.fillMaxWidth().clickable { onOpen(s) }, fontSize = 20.sp, lineHeight = 32.sp, textAlign = TextAlign.Right)
+                            Text(verse?.text ?: "", Modifier.fillMaxWidth().clickable { onOpen(s, a) }, fontSize = 20.sp, lineHeight = 32.sp, textAlign = TextAlign.Right)
                         }
                     }
                 }
