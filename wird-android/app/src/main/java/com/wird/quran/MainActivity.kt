@@ -151,7 +151,7 @@ private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, o
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("مصمم ليعمل دون إنترنت", fontWeight = FontWeight.Bold, color = EmeraldLight)
-                Text("النص والبحث والمفضلة وصفحات المصحف تعمل محليًا. مشغّل الصوت يشغّل ملفاتك المحلية؛ مكتبة قارئ مدمجة لم تُضمّن بعد.", fontSize = 13.sp, lineHeight = 20.sp)
+                Text("النص والبحث والمفضلة وصفحات المصحف والتلاوة المدمجة تعمل محليًا دون إنترنت.", fontSize = 13.sp, lineHeight = 20.sp)
             }
         }
     }
@@ -332,8 +332,10 @@ private fun MushafPagesScreen(page: Int, onPageChange: (Int) -> Unit) {
 @Composable
 private fun AudioScreen() {
     val context = LocalContext.current
-    var selectedUri by remember { mutableStateOf<Uri?>(null) }
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    val surahs = remember { loadSurahs(context) }
+    val player = remember { MediaPlayer() }
+    var selectedSurah by remember { mutableIntStateOf(1) }
+    var menuExpanded by remember { mutableStateOf(false) }
     var prepared by remember { mutableStateOf(false) }
     var playing by remember { mutableStateOf(false) }
     var durationMs by remember { mutableIntStateOf(1) }
@@ -341,122 +343,157 @@ private fun AudioScreen() {
     var seekTargetMs by remember { mutableIntStateOf(0) }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
-    val chooseAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            try {
-                context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Exception) { }
-            player = null
-            prepared = false
+    fun loadSurah(number: Int) {
+        val safeNumber = number.coerceIn(1, 114)
+        try {
             playing = false
-            durationMs = 1
+            prepared = false
             positionMs = 0
-            selectedUri = uri
+            durationMs = 1
             playbackError = null
-            val next = MediaPlayer()
-            try {
-                next.setOnErrorListener { mp, _, _ ->
-                    playing = false
-                    prepared = false
-                    playbackError = "تعذر تشغيل هذا الملف الصوتي. جرّب ملف MP3 أو M4A آخر."
-                    player = null
-                    true
-                }
-                next.setOnPreparedListener { mp ->
-                    durationMs = mp.duration.coerceAtLeast(1)
-                    prepared = true
-                    playing = false
-                }
-                next.setOnCompletionListener { mp ->
-                    playing = false
-                    positionMs = mp.duration.coerceAtLeast(0)
-                }
-                next.setDataSource(context, uri)
-                player = next
-                next.prepareAsync()
-            } catch (_: Exception) {
-                if (player === next) {
-                    player = null
-                } else {
-                    next.release()
-                }
-                selectedUri = null
-                prepared = false
+            player.reset()
+            player.setOnPreparedListener { mp ->
+                durationMs = mp.duration.coerceAtLeast(1)
+                positionMs = 0
+                prepared = true
                 playing = false
-                playbackError = "تعذر فتح الملف. اختر ملفًا صوتيًا صالحًا من جهازك."
             }
+            player.setOnCompletionListener { mp ->
+                playing = false
+                positionMs = mp.duration.coerceAtLeast(0)
+            }
+            player.setOnErrorListener { _, _, _ ->
+                playing = false
+                prepared = false
+                playbackError = "تعذر تشغيل التلاوة المدمجة لهذه السورة. أعد تثبيت نسخة التطبيق الكاملة."
+                true
+            }
+            val assetName = "audio/" + safeNumber.toString().padStart(3, '0') + ".mp3"
+            context.assets.openFd(assetName).use { descriptor ->
+                player.setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
+            }
+            selectedSurah = safeNumber
+            player.prepareAsync()
+        } catch (_: Exception) {
+            playing = false
+            prepared = false
+            playbackError = "ملف التلاوة غير موجود داخل حزمة التطبيق لهذه السورة."
         }
     }
 
     DisposableEffect(player) {
-        onDispose { player?.release() }
+        onDispose { runCatching { player.release() } }
     }
-    LaunchedEffect(player, playing, prepared) {
+    LaunchedEffect(Unit) {
+        loadSurah(selectedSurah)
+    }
+    LaunchedEffect(playing, prepared) {
         while (playing && prepared) {
-            player?.let { mp ->
-                if (mp.isPlaying) positionMs = mp.currentPosition.coerceIn(0, durationMs)
-            }
-            delay(500)
+            try {
+                if (player.isPlaying) positionMs = player.currentPosition.coerceIn(0, durationMs)
+            } catch (_: Exception) { }
+            delay(400)
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val selectedName = surahs.getOrNull(selectedSurah - 1)?.name ?: "السورة $selectedSurah"
+    Column(
+        Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("التلاوة الصوتية", fontSize = 25.sp, fontWeight = FontWeight.Bold)
-        Column(Modifier.fillMaxWidth().background(Emerald, RoundedCornerShape(24.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.fillMaxWidth().background(Emerald, RoundedCornerShape(24.dp)).padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Icon(Icons.Default.Headphones, contentDescription = null, tint = Gold, modifier = Modifier.size(54.dp))
-            Text("مشغّل تلاوة محلي", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            Text("اختر ملف تلاوة صوتيًا محفوظًا على جهازك. التشغيل لا يحتاج إلى الإنترنت.", color = Color(0xFFD9E5DC), textAlign = TextAlign.Center, lineHeight = 22.sp)
-            Button(onClick = { chooseAudio.launch(arrayOf("audio/*")) }) { Text("اختيار ملف التلاوة") }
-        }
-        Text(selectedUri?.lastPathSegment?.substringAfterLast('/') ?: "لم يتم اختيار ملف صوتي بعد", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-        if (selectedUri != null && player != null) {
-            Slider(
-                value = positionMs.coerceIn(0, durationMs).toFloat(),
-                onValueChange = { seekTargetMs = it.toInt(); positionMs = seekTargetMs },
-                onValueChangeFinished = {
-                    if (prepared) {
-                        player?.seekTo(seekTargetMs.coerceIn(0, durationMs))
-                    }
-                },
-                valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
-                enabled = prepared
+            Text("تلاوة مدمجة تعمل دون إنترنت", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("القارئ: مشاري العفاسي", color = Gold, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "ملفات السور مضمّنة داخل التطبيق. لا تحتاج إلى تنزيلها منفصلة أو الاتصال بالإنترنت أثناء الاستماع.",
+                color = Color(0xFFD9E5DC), textAlign = TextAlign.Center, lineHeight = 22.sp
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatAudioTime(positionMs))
-                Text(formatAudioTime(durationMs))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = {
-                    if (prepared) {
-                        player?.seekTo((player?.currentPosition ?: 0) - 10000)
-                        positionMs = (positionMs - 10000).coerceAtLeast(0)
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("اختر السورة", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Box {
+                    OutlinedButton(onClick = { menuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("$selectedSurah. $selectedName")
                     }
-                }, enabled = prepared) { Text("−10 ث") }
-                Spacer(Modifier.width(12.dp))
-                Button(onClick = {
-                    if (prepared) {
-                        val mp = player
-                        if (playing) {
-                            mp?.pause()
-                            playing = false
-                        } else {
-                            mp?.start()
-                            playing = true
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        modifier = Modifier.heightIn(max = 360.dp)
+                    ) {
+                        surahs.forEach { surah ->
+                            DropdownMenuItem(
+                                text = { Text("${surah.number}. ${surah.name}") },
+                                onClick = {
+                                    menuExpanded = false
+                                    if (surah.number != selectedSurah || !prepared) loadSurah(surah.number)
+                                }
+                            )
                         }
                     }
-                }, enabled = prepared) { Text(if (playing) "إيقاف مؤقت" else "تشغيل") }
-                Spacer(Modifier.width(12.dp))
-                OutlinedButton(onClick = {
-                    if (prepared) {
-                        player?.seekTo((player?.currentPosition ?: 0) + 10000)
-                        positionMs = (positionMs + 10000).coerceAtMost(durationMs)
+                }
+                playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+                Slider(
+                    value = positionMs.coerceIn(0, durationMs).toFloat(),
+                    onValueChange = { seekTargetMs = it.toInt(); positionMs = seekTargetMs },
+                    onValueChangeFinished = {
+                        if (prepared) {
+                            try {
+                                player.seekTo(seekTargetMs.coerceIn(0, durationMs))
+                            } catch (_: Exception) { }
+                        }
+                    },
+                    valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
+                    enabled = prepared
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatAudioTime(positionMs), fontSize = 12.sp)
+                    Text(formatAudioTime(durationMs), fontSize = 12.sp)
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(onClick = { loadSurah((selectedSurah - 1).coerceAtLeast(1)) }) {
+                        Text("السابق")
                     }
-                }, enabled = prepared) { Text("+10 ث") }
+                    Button(
+                        onClick = {
+                            try {
+                                if (playing) {
+                                    player.pause()
+                                    playing = false
+                                } else if (prepared) {
+                                    player.start()
+                                    playing = true
+                                }
+                            } catch (_: Exception) {
+                                playbackError = "تعذر بدء التلاوة. اختر السورة مرة أخرى."
+                            }
+                        },
+                        enabled = prepared
+                    ) { Text(if (playing) "إيقاف مؤقت" else "تشغيل") }
+                    OutlinedButton(onClick = { loadSurah((selectedSurah + 1).coerceAtMost(114)) }) {
+                        Text("التالي")
+                    }
+                }
+                if (!prepared && playbackError == null) {
+                    Text("جارٍ تجهيز التلاوة…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
+                }
             }
-            if (!prepared) Text("جارٍ تجهيز الملف الصوتي…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
         }
-        Text("ملاحظة: لا يحتوي APK الحالي على مكتبة تلاوات مدمجة؛ يمكنك تشغيل ملفات القارئ التي لديك محليًا. لا يتم بث أي صوت ولا يُطلب إذن الإنترنت.", fontSize = 13.sp, lineHeight = 21.sp)
+        Text(
+            "التلاوة: مشاري بن راشد العفاسي. المصدر: MP3Quran.net. تُضمّن ملفات الصوت في APK أثناء البناء؛ لا يوجد بث صوتي أو تنزيل عند التشغيل.",
+            fontSize = 12.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .75f)
+        )
     }
 }
 
