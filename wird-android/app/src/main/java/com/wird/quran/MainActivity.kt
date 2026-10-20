@@ -290,7 +290,7 @@ private fun BookmarksScreen(
 @Composable
 private fun MushafPagesScreen(page: Int, onPageChange: (Int) -> Unit) {
     val safePage = page.coerceIn(1, 604)
-    val pageFile = safePage.toString().padStart(3, '0') + ".svg"
+    val pageFile = safePage.toString().padStart(3, '0') + ".webp"
     val baseUrl = "file:///android_asset/mushaf/"
     val pageHtml = "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes'><style>html,body{margin:0;padding:0;background:#fff}img{width:100%;height:auto;display:block}</style></head><body><img src='$pageFile' alt='صفحة المصحف'></body></html>"
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -327,7 +327,7 @@ private fun MushafPagesScreen(page: Int, onPageChange: (Int) -> Unit) {
             OutlinedButton(onClick = { onPageChange((safePage - 1).coerceAtLeast(1)) }, enabled = safePage > 1) { Text("السابق") }
             OutlinedButton(onClick = { onPageChange((safePage + 1).coerceAtMost(604)) }, enabled = safePage < 604) { Text("التالي") }
         }
-        Text("صفحات مصحف المدينة النبوية — رواية حفص. تُحمّل ملفات الصفحات وقت بناء APK ثم تُعرض محليًا.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text("صفحات مصحف المدينة النبوية — رواية حفص. محفوظة محليًا بصيغة WebP عالية الدقة لتقليل حجم التطبيق.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
