@@ -22,10 +22,8 @@ if 'loadUrl("http' in source or 'setDataSource("http' in source or "OkHttpClient
 if errors:
     sys.exit("\n".join(errors))
 audio_dir = pathlib.Path("app/src/main/assets/audio")
-audio_files = [audio_dir / f"{n:03d}.mp3" for n in range(1, 115)]
-missing_audio = [str(p) for p in audio_files if not p.is_file() or p.stat().st_size < 2048]
-if missing_audio:
-    errors.append(f"Embedded recitation library incomplete ({len(missing_audio)} missing/invalid surah files).")
+if audio_dir.exists() and any(audio_dir.glob("*.mp3")):
+    errors.append("Audio files must not be bundled in the APK; audio is downloaded on demand.")
 if errors:
     sys.exit("\n".join(errors))
-print("Project contract passed: offline/no-AI, Arabic RTL, local Mushaf, and 114 embedded surah audio files.")
+print("Project contract passed: offline Quran/text/Mushaf, Arabic RTL, no AI, and optional on-demand audio.")
