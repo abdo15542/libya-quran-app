@@ -34,11 +34,9 @@ def fetch(page: int) -> tuple[int, str]:
                 content = response.read()
             if b"<svg" not in content[:5000].lower() or len(content) < 1000:
                 raise ValueError(f"Downloaded content is not a valid SVG page: {name}")
-            source = SOURCE_OUT / name
-            source.write_bytes(content)
+            (SOURCE_OUT / name).write_bytes(content)
 
-            # A 1800 px wide, lossless WebP keeps Arabic glyph edges crisp while
-            # reducing the hundreds of megabytes of vector path data substantially.
+            # Render at high resolution and preserve every rendered pixel in lossless WebP.
             png = cairosvg.svg2png(bytestring=content, output_width=RENDER_WIDTH)
             with Image.open(BytesIO(png)) as rendered:
                 rgba = rendered.convert("RGBA")
@@ -49,7 +47,7 @@ def fetch(page: int) -> tuple[int, str]:
             if not target.is_file() or target.stat().st_size < 1000:
                 raise ValueError(f"Rasterized page is empty or invalid: {target.name}")
             return page, target.name
-        except (OSError, urllib.error.URLError, UnicodeDecodeError, ValueError, cairosvg.CairoSVGError) as exc:
+        except Exception as exc:
             (OUT / f"{page:03d}.webp").unlink(missing_ok=True)
             last_error = exc
     raise RuntimeError(f"Unable to fetch/rasterize Mushaf page {name}: {last_error}")
