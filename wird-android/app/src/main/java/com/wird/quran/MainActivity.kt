@@ -2,7 +2,6 @@ package com.wird.quran
 
 import android.os.Bundle
 import android.media.MediaPlayer
-import android.net.Uri
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +26,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.viewinterop.AndroidView
@@ -151,7 +153,7 @@ private fun HomeScreen(surahs: List<Surah>, last: Int, onContinue: () -> Unit, o
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("مصمم ليعمل دون إنترنت", fontWeight = FontWeight.Bold, color = EmeraldLight)
-                Text("النص والبحث والمفضلة وصفحات المصحف والتلاوة المدمجة تعمل محليًا دون إنترنت.", fontSize = 13.sp, lineHeight = 20.sp)
+                Text("النص والبحث والمفضلة وصفحات المصحف تعمل محليًا دون إنترنت. يمكنك تنزيل السور الصوتية عند الحاجة.", fontSize = 13.sp, lineHeight = 20.sp)
             }
         }
     }
@@ -334,17 +336,34 @@ private fun AudioScreen() {
     val context = LocalContext.current
     val surahs = remember { loadSurahs(context) }
     val player = remember { MediaPlayer() }
+    val scope = rememberCoroutineScope()
     var selectedSurah by remember { mutableIntStateOf(1) }
     var menuExpanded by remember { mutableStateOf(false) }
     var prepared by remember { mutableStateOf(false) }
     var playing by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
     var durationMs by remember { mutableIntStateOf(1) }
     var positionMs by remember { mutableIntStateOf(0) }
     var seekTargetMs by remember { mutableIntStateOf(0) }
     var playbackError by remember { mutableStateOf<String?>(null) }
+    var downloadMessage by remember { mutableStateOf<String?>(null) }
+    var downloadedFiles by remember { mutableStateOf(setOf<Int>()) }
 
-    fun loadSurah(number: Int) {
+    fun audioFile(number: Int): java.io.File =
+        java.io.File(java.io.File(context.filesDir, "audio"), number.toString().padStart(3, '0') + ".mp3")
+
+    fun refreshDownloaded() {
+        downloadedFiles = (1..114).filter { audioFile(it).isFile && audioFile(it).length() > 2048L }.toSet()
+    }
+
+    fun prepareLocalFile(number: Int) {
         val safeNumber = number.coerceIn(1, 114)
+        val file = audioFile(safeNumber)
+        if (!file.isFile || file.length() < 2048L) {
+            prepared = false
+            playbackError = "نزّل هذه السورة أولًا. يلزم اتصال بالإنترنت للتنزيل فقط."
+            return
+        }
         try {
             playing = false
             prepared = false
@@ -365,137 +384,208 @@ private fun AudioScreen() {
             player.setOnErrorListener { _, _, _ ->
                 playing = false
                 prepared = false
-                playbackError = "تعذر تشغيل التلاوة المدمجة لهذه السورة. أعد تثبيت نسخة التطبيق الكاملة."
+                playbackError = "تعذر تشغيل الملف. احذف السورة وأعد تنزيلها."
                 true
             }
-            val assetName = "audio/" + safeNumber.toString().padStart(3, '0') + ".mp3"
-            context.assets.openFd(assetName).use { descriptor ->
-                player.setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
-            }
+            player.setDataSource(file.absolutePath)
             selectedSurah = safeNumber
             player.prepareAsync()
         } catch (_: Exception) {
             playing = false
             prepared = false
-            playbackError = "ملف التلاوة غير موجود داخل حزمة التطبيق لهذه السورة."
+            playbackError = "تعذر فتح ملف التلاوة. حاول تنزيل السورة مرة أخرى."
         }
     }
 
-    DisposableEffect(player) {
-        onDispose { runCatching { player.release() } }
+    fun downloadSelectedSurah() {
+        if (downloading) return
+        val number = selectedSurah
+        downloading = true
+        playbackError = null
+        downloadMessage = "جارٍ تنزيل السورة…"
+        scope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) { downloadMisharySurah(context, number) }
+                refreshDownloaded()
+                downloadMessage = "اكتمل التنزيل: " + (surahs.getOrNull(number - 1)?.name ?: "السورة " + number) +
+                    " (" + formatAudioSize(file.length()) + "). يمكنك الاستماع إليها دون إنترنت."
+                prepareLocalFile(number)
+            } catch (_: Exception) {
+                downloadMessage = null
+                playbackError = "فشل التنزيل. تحقق من الإنترنت ثم حاول مجددًا."
+            } finally {
+                downloading = false
+            }
+        }
     }
-    LaunchedEffect(Unit) {
-        loadSurah(selectedSurah)
-    }
+
+    DisposableEffect(player) { onDispose { runCatching { player.release() } } }
+    LaunchedEffect(Unit) { refreshDownloaded() }
     LaunchedEffect(playing, prepared) {
         while (playing && prepared) {
-            try {
-                if (player.isPlaying) positionMs = player.currentPosition.coerceIn(0, durationMs)
-            } catch (_: Exception) { }
+            try { if (player.isPlaying) positionMs = player.currentPosition.coerceIn(0, durationMs) } catch (_: Exception) { }
             delay(400)
         }
     }
 
-    val selectedName = surahs.getOrNull(selectedSurah - 1)?.name ?: "السورة $selectedSurah"
-    Column(
-        Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+    val selectedName = surahs.getOrNull(selectedSurah - 1)?.name ?: "السورة " + selectedSurah
+    Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("التلاوة الصوتية", fontSize = 25.sp, fontWeight = FontWeight.Bold)
-        Column(
-            Modifier.fillMaxWidth().background(Emerald, RoundedCornerShape(24.dp)).padding(22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().background(Emerald, RoundedCornerShape(24.dp)).padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Default.Headphones, contentDescription = null, tint = Gold, modifier = Modifier.size(54.dp))
-            Text("تلاوة مدمجة تعمل دون إنترنت", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("نزّل ما تحتاجه فقط", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
             Text("القارئ: مشاري العفاسي", color = Gold, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "ملفات السور مضمّنة داخل التطبيق. لا تحتاج إلى تنزيلها منفصلة أو الاتصال بالإنترنت أثناء الاستماع.",
-                color = Color(0xFFD9E5DC), textAlign = TextAlign.Center, lineHeight = 22.sp
-            )
+            Text("التطبيق الأساسي صغير. نزّل السورة عند توفر الإنترنت، ثم استمع إليها لاحقًا دون اتصال.",
+                color = Color(0xFFD9E5DC), textAlign = TextAlign.Center, lineHeight = 22.sp)
         }
-
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("اختر السورة", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 Box {
                     OutlinedButton(onClick = { menuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("$selectedSurah. $selectedName")
+                        Text(selectedSurah.toString() + ". " + selectedName)
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        modifier = Modifier.heightIn(max = 360.dp)
-                    ) {
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
                         surahs.forEach { surah ->
                             DropdownMenuItem(
-                                text = { Text("${surah.number}. ${surah.name}") },
+                                text = { Text(surah.number.toString() + ". " + surah.name + if (downloadedFiles.contains(surah.number)) " ✓" else "") },
                                 onClick = {
                                     menuExpanded = false
-                                    if (surah.number != selectedSurah || !prepared) loadSurah(surah.number)
+                                    selectedSurah = surah.number
+                                    prepared = false; playing = false; positionMs = 0; durationMs = 1
+                                    playbackError = null; downloadMessage = null
+                                    runCatching { player.reset() }
+                                    if (downloadedFiles.contains(surah.number)) prepareLocalFile(surah.number)
                                 }
                             )
                         }
                     }
                 }
+                Text("المحفوظ على الجهاز: " + downloadedFiles.size + " من 114 سورة", fontSize = 13.sp, color = EmeraldLight)
+                downloadMessage?.let { Text(it, color = EmeraldLight, fontSize = 12.sp, lineHeight = 18.sp) }
                 playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-                Slider(
-                    value = positionMs.coerceIn(0, durationMs).toFloat(),
+                Button(onClick = { downloadSelectedSurah() }, enabled = !downloading && !downloadedFiles.contains(selectedSurah), modifier = Modifier.fillMaxWidth()) {
+                    Text(if (downloading) "جارٍ التنزيل…" else if (downloadedFiles.contains(selectedSurah)) "السورة محفوظة على الجهاز" else "تنزيل السورة للاستماع دون إنترنت")
+                }
+                if (downloading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                Slider(value = positionMs.coerceIn(0, durationMs).toFloat(),
                     onValueChange = { seekTargetMs = it.toInt(); positionMs = seekTargetMs },
-                    onValueChangeFinished = {
-                        if (prepared) {
-                            try {
-                                player.seekTo(seekTargetMs.coerceIn(0, durationMs))
-                            } catch (_: Exception) { }
-                        }
-                    },
-                    valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
-                    enabled = prepared
-                )
+                    onValueChangeFinished = { if (prepared) runCatching { player.seekTo(seekTargetMs.coerceIn(0, durationMs)) } },
+                    valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(), enabled = prepared)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(formatAudioTime(positionMs), fontSize = 12.sp)
                     Text(formatAudioTime(durationMs), fontSize = 12.sp)
                 }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(onClick = { loadSurah((selectedSurah - 1).coerceAtLeast(1)) }) {
-                        Text("السابق")
-                    }
-                    Button(
-                        onClick = {
-                            try {
-                                if (playing) {
-                                    player.pause()
-                                    playing = false
-                                } else if (prepared) {
-                                    player.start()
-                                    playing = true
-                                }
-                            } catch (_: Exception) {
-                                playbackError = "تعذر بدء التلاوة. اختر السورة مرة أخرى."
-                            }
-                        },
-                        enabled = prepared
-                    ) { Text(if (playing) "إيقاف مؤقت" else "تشغيل") }
-                    OutlinedButton(onClick = { loadSurah((selectedSurah + 1).coerceAtMost(114)) }) {
-                        Text("التالي")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = {
+                        selectedSurah = (selectedSurah - 1).coerceAtLeast(1)
+                        playbackError = null; downloadMessage = null; runCatching { player.reset() }; prepared = false; playing = false
+                        if (downloadedFiles.contains(selectedSurah)) prepareLocalFile(selectedSurah)
+                    }) { Text("السابق") }
+                    Button(onClick = {
+                        try {
+                            if (playing) { player.pause(); playing = false }
+                            else if (prepared) { player.start(); playing = true }
+                        } catch (_: Exception) { playbackError = "تعذر بدء التلاوة. حاول اختيار السورة مرة أخرى." }
+                    }, enabled = prepared) { Text(if (playing) "إيقاف مؤقت" else "تشغيل") }
+                    OutlinedButton(onClick = {
+                        selectedSurah = (selectedSurah + 1).coerceAtMost(114)
+                        playbackError = null; downloadMessage = null; runCatching { player.reset() }; prepared = false; playing = false
+                        if (downloadedFiles.contains(selectedSurah)) prepareLocalFile(selectedSurah)
+                    }) { Text("التالي") }
+                }
+                if (downloadedFiles.contains(selectedSurah)) {
+                    OutlinedButton(onClick = {
+                        playing = false; prepared = false; runCatching { player.reset() }
+                        val deleted = runCatching { audioFile(selectedSurah).delete() }.getOrDefault(false)
+                        refreshDownloaded()
+                        downloadMessage = if (deleted) "حُذفت السورة من الجهاز لتوفير المساحة." else "تعذر حذف الملف."
+                        positionMs = 0; durationMs = 1
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Delete, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("حذف السورة من الجهاز")
                     }
                 }
-                if (!prepared && playbackError == null) {
-                    Text("جارٍ تجهيز التلاوة…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
+                OutlinedButton(onClick = {
+                    playing = false; prepared = false; runCatching { player.reset() }
+                    val deleted = runCatching {
+                        val dir = java.io.File(context.filesDir, "audio")
+                        dir.listFiles()?.forEach { it.delete() }
+                        dir.delete()
+                    }.isSuccess
+                    refreshDownloaded(); positionMs = 0; durationMs = 1
+                    downloadMessage = if (deleted) "تم حذف ملفات التلاوة المحفوظة لتوفير المساحة." else "تعذر حذف بعض الملفات."
+                }, modifier = Modifier.fillMaxWidth(), enabled = downloadedFiles.isNotEmpty() && !downloading) {
+                    Text("حذف جميع السور المحفوظة (" + downloadedFiles.size + ")")
                 }
             }
         }
-        Text(
-            "التلاوة: مشاري بن راشد العفاسي. المصدر: MP3Quran.net. تُضمّن ملفات الصوت في APK أثناء البناء؛ لا يوجد بث صوتي أو تنزيل عند التشغيل.",
-            fontSize = 12.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .75f)
-        )
+        Text("الصوت من MP3Quran.net. يلزم الإنترنت لتنزيل السورة فقط؛ تبقى الملفات داخل مساحة التطبيق الخاصة وتعمل دون إنترنت. حذف التطبيق يمسح الملفات المحفوظة.",
+            fontSize = 12.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .75f))
     }
 }
+
+private suspend fun downloadMisharySurah(context: android.content.Context, surahNumber: Int): java.io.File =
+    withContext(Dispatchers.IO) {
+        val apiConnection = (java.net.URL("https://mp3quran.net/api/v3/reciters?language=eng").openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = 20000; readTimeout = 30000; requestMethod = "GET"
+            setRequestProperty("User-Agent", "WirdQuranAndroid/1.0")
+        }
+        val server = try {
+            val json = apiConnection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val reciters = org.json.JSONObject(json).getJSONArray("reciters")
+            var foundServer: String? = null
+            for (i in 0 until reciters.length()) {
+                val reciter = reciters.getJSONObject(i)
+                val name = reciter.optString("name")
+                if (!name.contains("Mishary", true) && !name.contains("مشاري") && !name.contains("Alafasi", true) && !name.contains("العفاسي")) continue
+                val moshafs = reciter.optJSONArray("moshaf") ?: continue
+                for (j in 0 until moshafs.length()) {
+                    val moshaf = moshafs.getJSONObject(j)
+                    val listed = moshaf.optString("surah_list").split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
+                    if (moshaf.optInt("surah_total") == 114 && (1..114).all { it in listed }) {
+                        val candidate = moshaf.optString("server").trimEnd('/') + "/"
+                        if (candidate.startsWith("https://")) { foundServer = candidate; break }
+                    }
+                }
+                if (foundServer != null) break
+            }
+            foundServer ?: throw java.io.IOException("Complete reciter catalogue entry not found")
+        } finally { apiConnection.disconnect() }
+
+        val dir = java.io.File(context.filesDir, "audio")
+        if (!dir.exists() && !dir.mkdirs()) throw java.io.IOException("Could not create audio folder")
+        val fileName = surahNumber.toString().padStart(3, '0') + ".mp3"
+        val target = java.io.File(dir, fileName)
+        val temp = java.io.File(dir, fileName + ".part")
+        val connection = (java.net.URL(server + fileName).openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = 20000; readTimeout = 60000; requestMethod = "GET"
+            setRequestProperty("User-Agent", "WirdQuranAndroid/1.0")
+        }
+        try {
+            connection.connect()
+            if (connection.responseCode !in 200..299) throw java.io.IOException("Audio server HTTP " + connection.responseCode)
+            if (connection.contentType?.lowercase()?.contains("text/html") == true) throw java.io.IOException("Audio server returned HTML")
+            connection.inputStream.use { input -> temp.outputStream().buffered().use { output -> input.copyTo(output) } }
+            if (!temp.isFile || temp.length() < 2048L) throw java.io.IOException("Downloaded file is too small")
+            val header = temp.inputStream().use { it.readNBytes(4) }
+            val validMp3 = header.size >= 2 && (
+                (header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte()) ||
+                ((header[0].toInt() and 0xFF) == 0xFF && (header[1].toInt() and 0xE0) == 0xE0)
+            )
+            if (!validMp3) throw java.io.IOException("Downloaded file is not MP3")
+            if (target.exists()) target.delete()
+            if (!temp.renameTo(target)) throw java.io.IOException("Could not save downloaded audio")
+            target
+        } catch (e: Exception) {
+            temp.delete()
+            throw e
+        } finally { connection.disconnect() }
+    }
+
+private fun formatAudioSize(bytes: Long): String =
+    if (bytes >= 1024L * 1024L) "%.1f MB".format(bytes.toDouble() / (1024L * 1024L))
+    else (bytes / 1024L).toString() + " KB"
 
 private fun formatAudioTime(milliseconds: Int): String {
     val totalSeconds = (milliseconds.coerceAtLeast(0) / 1000)
@@ -515,9 +605,9 @@ private fun SettingsScreen(darkMode: Boolean, onDarkMode: (Boolean) -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("حول وِرد", fontWeight = FontWeight.Bold, color = EmeraldLight)
-                Text("تطبيق محلي دون ذكاء اصطناعي أو أذونات شبكة. النص القرآني من مشروع Tanzil ويُعرض دون تعديل.", fontSize = 14.sp, lineHeight = 22.sp)
+                Text("تطبيق دون ذكاء اصطناعي. النص القرآني من مشروع Tanzil ويُعرض دون تعديل؛ يلزم الاتصال بالإنترنت لتنزيل التلاوة الاختيارية فقط.", fontSize = 14.sp, lineHeight = 22.sp)
                 Text("المصدر: https://tanzil.net", fontSize = 12.sp)
-                Text("صفحات المصحف والتلاوة المدمجة تُضمّنان داخل حزمة التطبيق أثناء البناء. بعد التثبيت تعمل القراءة والبحث والمحفوظات والتلاوة دون اتصال بالإنترنت.", fontSize = 12.sp, lineHeight = 19.sp)
+                Text("صفحات المصحف والنص والبحث والمحفوظات تعمل دون إنترنت. التلاوة اختيارية: نزّل السور التي تريدها مرة واحدة لتعمل لاحقًا دون اتصال.", fontSize = 12.sp, lineHeight = 19.sp)
             }
         }
     }
