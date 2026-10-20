@@ -420,7 +420,10 @@ private fun AudioScreen() {
     }
 
     DisposableEffect(player) { onDispose { runCatching { player.release() } } }
-    LaunchedEffect(Unit) { refreshDownloaded() }
+    LaunchedEffect(Unit) {
+        refreshDownloaded()
+        if (audioFile(selectedSurah).isFile && audioFile(selectedSurah).length() > 2048L) prepareLocalFile(selectedSurah)
+    }
     LaunchedEffect(playing, prepared) {
         while (playing && prepared) {
             try { if (player.isPlaying) positionMs = player.currentPosition.coerceIn(0, durationMs) } catch (_: Exception) { }
@@ -510,9 +513,10 @@ private fun AudioScreen() {
                     playing = false; prepared = false; runCatching { player.reset() }
                     val deleted = runCatching {
                         val dir = java.io.File(context.filesDir, "audio")
-                        dir.listFiles()?.forEach { it.delete() }
-                        dir.delete()
-                    }.isSuccess
+                        val filesDeleted = dir.listFiles()?.all { it.delete() || !it.exists() } ?: true
+                        val dirDeleted = !dir.exists() || dir.delete()
+                        filesDeleted && dirDeleted
+                    }.getOrDefault(false)
                     refreshDownloaded(); positionMs = 0; durationMs = 1
                     downloadMessage = if (deleted) "تم حذف ملفات التلاوة المحفوظة لتوفير المساحة." else "تعذر حذف بعض الملفات."
                 }, modifier = Modifier.fillMaxWidth(), enabled = downloadedFiles.isNotEmpty() && !downloading) {
