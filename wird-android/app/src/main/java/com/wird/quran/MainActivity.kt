@@ -568,10 +568,10 @@ private suspend fun downloadMisharySurah(context: android.content.Context, surah
             if (connection.contentType?.lowercase()?.contains("text/html") == true) throw java.io.IOException("Audio server returned HTML")
             connection.inputStream.use { input -> temp.outputStream().buffered().use { output -> input.copyTo(output) } }
             if (!temp.isFile || temp.length() < 2048L) throw java.io.IOException("Downloaded file is too small")
-            val header = temp.inputStream().use { it.readNBytes(4) }
-            val validMp3 = header.size >= 2 && (
-                (header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte()) ||
-                ((header[0].toInt() and 0xFF) == 0xFF && (header[1].toInt() and 0xE0) == 0xE0)
+            val header = temp.inputStream().use { input -> intArrayOf(input.read(), input.read()) }
+            val validMp3 = header[0] >= 0 && header[1] >= 0 && (
+                (header[0] == 'I'.code && header[1] == 'D'.code) ||
+                (header[0] == 0xFF && (header[1] and 0xE0) == 0xE0)
             )
             if (!validMp3) throw java.io.IOException("Downloaded file is not MP3")
             if (target.exists()) target.delete()
