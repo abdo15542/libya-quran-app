@@ -7,10 +7,10 @@ manifest = pathlib.Path("app/src/main/AndroidManifest.xml").read_text(encoding="
 gradle = pathlib.Path("app/build.gradle.kts").read_text(encoding="utf-8")
 source = pathlib.Path("app/src/main/java/com/wird/quran/MainActivity.kt").read_text(encoding="utf-8")
 errors = []
-if "android.permission.INTERNET" in manifest:
-    errors.append("The Android manifest must not request INTERNET permission.")
-if "android.permission.ACCESS_NETWORK_STATE" in manifest:
-    errors.append("The Android manifest must not request network-state permission.")
+if "android.permission.INTERNET" not in manifest:
+    errors.append("The Android manifest must allow optional audio downloads.")
+if "downloadMisharySurah" not in source or "filesDir, \"audio\"" not in source:
+    errors.append("Optional offline audio download/storage implementation is missing.")
 if any(term in gradle.lower() for term in ("openai", "tflite", "tensorflow", "mlkit", "onnxruntime")):
     errors.append("Unexpected AI/ML dependency found in Gradle dependencies.")
 if "LocalLayoutDirection provides LayoutDirection.Rtl" not in source:
