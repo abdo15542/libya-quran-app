@@ -32,6 +32,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: wird-android/requirements-build.txt
+      - name: Install page-rendering tools
+        working-directory: wird-android
+        run: python -m pip install --disable-pip-version-check -r requirements-build.txt
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -40,7 +49,7 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Fetch and validate Tanzil Quran text
+      - name: Fetch and validate Quran text and compact Mushaf pages
         working-directory: wird-android
         run: |
           python3 tools/fetch_quran.py
@@ -55,6 +64,13 @@ jobs:
       - name: Build debug APK
         working-directory: wird-android
         run: gradle --no-daemon assembleDebug
+      - name: Report APK size
+        working-directory: wird-android
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          ls -lh "$APK"
+          python -c 'import os; p="app/build/outputs/apk/debug/app-debug.apk"; print(f"APK size: {os.path.getsize(p)/(1024*1024):.1f} MiB"); assert os.path.getsize(p) < 400*1024*1024, "APK exceeds 400 MiB size budget"'
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
