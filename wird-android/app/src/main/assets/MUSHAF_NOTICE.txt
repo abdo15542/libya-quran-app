@@ -1,0 +1,17 @@
+MUSHAF PAGE ARTWORK — THIRD-PARTY NOTICE
+
+Edition: Mushaf Al-Madinah An-Nabawiyyah, Hafs, King Fahd Glorious Qur'an Printing Complex (KFGQPC).
+SVG page files are fetched at build time from:
+https://github.com/quran-ws/quran-svg
+Pinned source revision: b4155f07e4aea087d2c458069acff9f7c7e749f6
+Page directory: mushafs/hafs/kfqc/svg/
+
+The quran-ws project states that its SVG page renderings and associated metadata are made available under CC BY 4.0, with attribution waived for use inside a product; the original mushaf artwork remains the intellectual property of its publisher and is used under the publisher's published digital/software usage rights.
+
+Official publisher:
+King Fahd Glorious Qur'an Printing Complex
+https://qurancomplex.gov.sa/en/techquran/dev/
+Published usage rights:
+https://dm.qurancomplex.gov.sa/rights/
+
+Do not alter Quranic content. This notice is included for transparency and source traceability.
