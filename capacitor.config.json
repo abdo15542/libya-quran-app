@@ -9,17 +9,16 @@
   },
   "android": {
     "allowMixedContent": true,
-    "webContentsDebuggingEnabled": true
+    "webContentsDebuggingEnabled": false
   },
   "plugins": {
     "CapacitorUpdater": {
-      "autoUpdate": true,
-      "updateUrl": "https://github.com/abdo15542/libya-quran-app/releases/latest/download/update.json",
-      "resetWhenUpdate": false,
+      "autoUpdate": false,
+      "appReadyTimeout": 30000,
+      "resetWhenUpdate": true,
       "autoDeleteFailed": true,
       "autoDeletePrevious": true,
       "responseTimeout": 30,
-      "allowModifyUrl": true,
       "statsUrl": ""
     },
     "LocalNotifications": {
