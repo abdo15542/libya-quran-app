@@ -3,11 +3,18 @@ name: Build APK + Update Bundle
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
@@ -43,6 +50,13 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
           restore-keys: ${{ runner.os }}-gradle-
 
+      - name: Stamp version
+        run: |
+          VERSION="1.0.${{ github.run_number }}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "window.APP_VERSION = '$VERSION';" > www/js/version.js
+          cat www/js/version.js
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
@@ -59,7 +73,18 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace --init-script init.gradle 2>&1 | tail -300
+          ./gradlew assembleDebug --no-daemon --stacktrace --init-script init.gradle \
+            -PappVersionCode=${{ github.run_number }} -PappVersionName=${{ env.VERSION }} 2>&1 | tail -300
+
+      - name: Collect APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk libya-quran.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libya-quran-apk
+          path: libya-quran.apk
+          if-no-files-found: error
 
       - name: Build Update Bundle
         run: |
@@ -68,7 +93,6 @@ jobs:
           cd ..
           ls -lh bundle.zip
           CHECKSUM=$(sha256sum bundle.zip | cut -d' ' -f1)
-          VERSION="1.0.${{ github.run_number }}"
           cat > update.json << JSONEOF
           {
             "version": "$VERSION",
@@ -77,32 +101,27 @@ jobs:
           }
           JSONEOF
           cat update.json
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Delete old latest release
+        if: github.event_name != 'pull_request'
         continue-on-error: true
         run: gh release delete latest --yes --cleanup-tag 2>/dev/null || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create/Update latest release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "أحدث إصدار — ${{ env.VERSION }}"
           body: |
-            🎉 تحديث تلقائي جديد
+            📱 حمّل libya-quran.apk وثبّته على أندرويد.
             الإصدار: ${{ env.VERSION }}
           files: |
+            libya-quran.apk
             bundle.zip
             update.json
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: libya-quran-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
