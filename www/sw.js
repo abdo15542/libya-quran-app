@@ -8,6 +8,7 @@ const SHELL = [
   './index.html',
   './manifest.json',
   './css/style.css',
+  './css/reading-ui.css',
   './js/version.js',
   './js/pako.min.js',
   './js/db.js',
@@ -22,6 +23,7 @@ const SHELL = [
   './js/memorization.js',
   './js/app.js',
   './js/app-patches.js',
+  './js/reading-ui.js',
 ];
 
 self.addEventListener('install', (e) => {

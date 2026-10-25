@@ -54,7 +54,7 @@
   document.addEventListener('DOMContentLoaded', async function () {
     try {
       const t = await DB.getUserData('theme');
-      if ((t === 'dark' || t === 'light') && typeof state !== 'undefined') {
+      if ((t === 'dark' || t === 'light' || t === 'sepia') && typeof state !== 'undefined') {
         state.theme = t;
         applyTheme();
       }

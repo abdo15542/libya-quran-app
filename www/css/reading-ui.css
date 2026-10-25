@@ -1,0 +1,247 @@
+/* ==========================================================
+   تحسينات واجهة القراءة — تُحمَّل بعد style.css
+   ========================================================== */
+
+/* ---------- خط المصحف ----------
+   الخطوط الموجودة افتراضياً على أندرويد قليلة، لذا نجرّب خط «أميري قرآن»
+   إن كان مثبتاً أو موضوعاً في www/fonts/AmiriQuran-Regular.woff2،
+   وإلا يُستخدم أقرب خط عربي نسخي متاح. */
+@font-face {
+  font-family: 'Amiri Quran';
+  src: local('Amiri Quran'), local('AmiriQuran-Regular'),
+       url('../fonts/AmiriQuran-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  --line-height: 2.4;
+  --topbar-h: 58px;
+  --reading-font: 'Amiri Quran', 'Amiri', 'Scheherazade New', 'Noto Naskh Arabic',
+                  'Traditional Arabic', serif;
+}
+
+/* ---------- مظهر «ورقي» (بجانب الفاتح والداكن) ---------- */
+[data-theme="sepia"] {
+  --bg: #f4ecd8;
+  --text: #3b2f1e;
+  --text-2: #7a6a50;
+  --border: #d9c9a3;
+  --verse-bg: #fbf5e6;
+  --verse-active: #f1e3bf;
+}
+
+body { font-family: var(--reading-font); -webkit-tap-highlight-color: transparent; }
+
+/* ---------- إصلاح: المسافة بين الأسطر وحجم الخط ----------
+   في style.css قاعدة معلّقة تجعل line-height وfont-size خاصتين بالوضع الليلي فقط
+   وبأولوية أعلى من متغير الحجم، فكان شريط حجم الخط لا يعمل ليلاً
+   والنص متراصّاً نهاراً. هذه القاعدة أعلى أولوية منها. */
+html[data-theme] .verses-container {
+  line-height: var(--line-height);
+  font-size: var(--font-size);
+}
+
+/* ---------- الشريط العلوي وأدوات القراءة ---------- */
+.topbar { min-height: var(--topbar-h); padding: .35rem 1rem; }
+.icon-btn { min-width: 44px; min-height: 44px; border-radius: 10px; }
+.icon-btn:active { background: rgba(255,255,255,.12); }
+
+/* شريط الأدوات: صف واحد قابل للتمرير بدل التفاف يغطي النص */
+.toolbar {
+  top: var(--topbar-h);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  justify-content: flex-start;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  transition: transform .25s ease;
+}
+.toolbar::-webkit-scrollbar { display: none; }
+.toolbar button { flex: 0 0 auto; white-space: nowrap; min-height: 36px; }
+@media (min-width: 640px) { .toolbar { justify-content: center; } }
+
+/* يختفي عند التمرير للأسفل ويعود عند التمرير للأعلى */
+body.toolbar-hidden .toolbar { transform: translateY(-130%); }
+
+.reader {
+  padding-top: calc(var(--topbar-h) + 4rem) !important;
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---------- رأس السورة ---------- */
+.surah-info {
+  background: var(--verse-bg);
+  border: 1px solid var(--gold);
+  outline: 1px solid var(--gold);
+  outline-offset: -5px;
+  border-radius: 12px;
+  padding: 1.4rem 1rem 1.1rem;
+  margin: .5rem 0 1.25rem;
+}
+.surah-info h2 { letter-spacing: .02em; }
+
+.bismillah {
+  font-size: calc(var(--font-size) * 1.1);
+  padding: .75rem 1rem 1.1rem;
+  line-height: 2;
+}
+
+/* ---------- بطاقة الآية ---------- */
+.verse {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  padding: .9rem 1.1rem;
+}
+.verse:active { background: var(--verse-active); }
+
+/* رقم الآية: حلقة ذهبية بدل دائرة ممتلئة */
+.verse .verse-number {
+  background: transparent;
+  color: var(--green);
+  border: 2px solid var(--gold);
+  width: 2.1rem;
+  height: 2.1rem;
+  line-height: calc(2.1rem - 4px);
+  font-size: .8rem;
+  font-weight: bold;
+  vertical-align: middle;
+  margin: 0 0 0 .6rem;
+}
+[data-theme="dark"] .verse .verse-number { color: var(--gold); }
+
+/* ---------- نمط «المصحف المتصل» ---------- */
+.reading-flow .verses-container {
+  background: var(--verse-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  text-align: justify;
+  text-justify: inter-word;
+}
+.reading-flow .bismillah { text-align: center; }
+.reading-flow .verse {
+  display: inline;
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+  padding: 0;
+  margin: 0;
+}
+.reading-flow .verse:active,
+.reading-flow .verse.active { background: var(--verse-active); box-shadow: none; }
+.reading-flow .verse-body { display: inline; }
+.reading-flow .verse .verse-number {
+  width: auto;
+  height: auto;
+  min-width: 1.9em;
+  padding: 0 .3em;
+  line-height: 1.6;
+  border-radius: 999px;
+  font-size: .5em;
+  margin: 0 .3em;
+}
+/* شريط خيارات الآية داخل النمط المتصل يظهر كصندوق مستقل */
+.reading-flow .verse-inline-actions:not(.hidden),
+.reading-flow .verse-inline-content:not(:empty) {
+  display: flex;
+  text-align: right;
+  line-height: 1.6;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .6rem;
+  margin: .6rem 0;
+}
+.reading-flow .verse-inline-content:not(:empty) { display: block; }
+
+/* ---------- الشريط السفلي ---------- */
+.bottom-nav {
+  border-radius: 16px 16px 0 0;
+  padding: .6rem .75rem calc(.6rem + env(safe-area-inset-bottom, 0px));
+}
+.nav-btn { min-height: 48px; border-radius: 12px; }
+.nav-btn:active { background: rgba(255,255,255,.2); }
+.play-btn { flex: 1.4; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+
+/* ---------- القائمة الجانبية ---------- */
+.sidebar { width: min(320px, 85vw); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.surah-list li { min-height: 44px; align-items: center; }
+.surah-list li.current {
+  background: var(--verse-active);
+  border-right: 3px solid var(--gold);
+  font-weight: bold;
+}
+
+/* ---------- النوافذ: ورقة سفلية على الهاتف ---------- */
+@media (max-width: 600px) {
+  .modal { align-items: flex-end; padding: 0; }
+  .modal-content {
+    border-radius: 18px 18px 0 0;
+    max-height: 88vh;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    animation: sheetUp .25s ease;
+  }
+}
+@keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- لوحة خيارات القراءة (Aa) ---------- */
+#reading-panel {
+  position: fixed;
+  top: calc(var(--topbar-h) + 6px);
+  left: .5rem;
+  width: min(330px, calc(100vw - 1rem));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--gold);
+  border-radius: 14px;
+  padding: 1rem;
+  z-index: 150;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .3);
+  font-family: inherit;
+}
+#reading-panel .rp-row { margin-bottom: .9rem; }
+#reading-panel .rp-row:last-child { margin-bottom: 0; }
+#reading-panel label {
+  display: block;
+  font-size: .85rem;
+  font-weight: bold;
+  color: var(--text-2);
+  margin-bottom: .3rem;
+}
+#reading-panel input[type="range"] { width: 100%; accent-color: var(--gold); }
+#reading-panel .rp-seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+#reading-panel .rp-seg button {
+  flex: 1;
+  padding: .55rem .25rem;
+  background: var(--verse-bg);
+  border: none;
+  border-left: 1px solid var(--border);
+  font-family: inherit;
+  font-size: .9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+#reading-panel .rp-seg button:last-child { border-left: none; }
+#reading-panel .rp-seg button.active { background: var(--green); color: var(--gold); font-weight: bold; }
+#reading-panel .rp-check { display: flex; align-items: center; gap: .5rem; }
+#reading-panel .rp-check label { margin: 0; font-size: .95rem; font-weight: normal; color: var(--text); }
+#reading-panel .rp-check input { width: 20px; height: 20px; accent-color: var(--gold); }
+
+/* ---------- إتاحة الاستخدام ---------- */
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
