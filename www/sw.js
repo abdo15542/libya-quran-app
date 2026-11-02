@@ -1,68 +1,12 @@
-// Service Worker — شبكة أولاً (حتى تظهر التحديثات) مع احتياطي من الذاكرة
-const VERSION = 'v3';
-const CACHE_STATIC = 'libya-quran-static-' + VERSION;
-const KEEP_CACHES = [CACHE_STATIC, 'libya-quran-audio-v1'];
+// عامل خدمة مُعطِّل (إصدار 1.1.1): إصدارات سابقة سجّلت عاملاً يخزّن الملفات مؤقتاً،
+// وبقايا ذلك الكاش قد تعرض نسخاً قديمة بعد التحديث. هذا العامل يحذف كل الكاش
+// ثم يلغي تسجيل نفسه، ولا يعترض أي طلب إطلاقاً.
+self.addEventListener('install', () => self.skipWaiting());
 
-const SHELL = [
-  './',
-  './index.html',
-  './manifest.json',
-  './css/style.css',
-  './css/reading-ui.css',
-  './js/version.js',
-  './js/pako.min.js',
-  './js/db.js',
-  './js/data-loader.js',
-  './js/reciters.js',
-  './js/audio-downloader.js',
-  './js/audio.js',
-  './js/tajweed.js',
-  './js/search.js',
-  './js/tafsir.js',
-  './js/translation.js',
-  './js/memorization.js',
-  './js/app.js',
-  './js/reading-ui.js',
-];
-
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_STATIC)
-      .then(cache => Promise.all(SHELL.map(url => cache.add(url).catch(() => {}))))
-      .then(() => self.skipWaiting())
-  );
-});
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => !KEEP_CACHES.includes(k)).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
-
-  const url = new URL(req.url);
-  if (url.origin !== location.origin) return;        // الصوت والخدمات الخارجية: بدون تدخل
-  if (url.pathname.includes('/data/')) return;       // البيانات الكبيرة مخزّنة في IndexedDB
-  if (url.pathname.endsWith('.mp3')) return;
-
-  e.respondWith(
-    fetch(req)
-      .then(res => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copy = res.clone();
-          caches.open(CACHE_STATIC).then(c => c.put(req, copy)).catch(() => {});
-        }
-        return res;
-      })
-      .catch(() =>
-        caches.match(req).then(cached =>
-          cached || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error())
-        )
-      )
-  );
+self.addEventListener('activate', async () => {
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  } catch (e) { /* تجاهل */ }
+  try { await self.registration.unregister(); } catch (e) { /* تجاهل */ }
 });

@@ -1,6 +1,6 @@
 {
   "name": "libya-quran-app",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "مصحف ليبيا التفاعلي — رواية قالون عن نافع",
   "scripts": {
     "start": "npx serve www -l 3000",
