@@ -623,13 +623,27 @@ async function startPlayback(surahNum) {
   } catch (e) {
     audioState.isPlaying = false;
     setPlayButton('▶ تشغيل');
-    showUpdateToast('❌ تعذّر تشغيل الصوت — أعد المحاولة');
+    const reason = e && e.message ? String(e.message).slice(0, 160) : '';
+    showUpdateToast('❌ تعذّر تشغيل الصوت' + (reason ? ' — ' + reason : ''));
   }
 }
 
 async function togglePlay() {
   return startPlayback(state.currentSurah);
 }
+
+// سطر تشخيص الصوت في الإعدادات: يعرض الإصدار وحالة المشغّل وآخر نتيجة
+function renderAudioDiag() {
+  const el = document.getElementById('audio-diag-line');
+  if (!el) return;
+  const d = window.__AUDIO_DIAG__ || {};
+  const last = d.entries && d.entries.length ? d.entries[d.entries.length - 1] : null;
+  el.textContent = '🔎 تشخيص الصوت — الإصدار ' + (window.APP_VERSION || '?') +
+    ' · الإضافة الأصلية: ' + (d.plugin === 'present' ? 'موجودة' : d.plugin === 'absent' ? 'غير موجودة' : '؟') +
+    ' · المحرك: ' + (d.engine || '—') +
+    (last ? ' · آخر حدث: ' + last.kind + (last.detail ? ' (' + String(last.detail).slice(0, 90) + ')' : '') : '');
+}
+window.addEventListener('audio-diag', renderAudioDiag);
 
 
 
@@ -821,6 +835,7 @@ function openSettingsNew() {
           🎧 تلاوة عبد الباسط عبد الصمد كاملة (114 سورة) مدمجة داخل التطبيق —
           تعمل فوراً وبدون إنترنت نهائياً، بلا تحميل وبلا مساحة إضافية.
         </div>
+        <div class="audio-diag" id="audio-diag-line">🔎 تشخيص الصوت: —</div>
       </div>
 
       <label>التلوين التجويدي</label>
@@ -845,6 +860,7 @@ function openSettingsNew() {
 
   // احسب الإحصاءات
   updateAudioStatsUI();
+  renderAudioDiag();
 
   // عدّاد المحفوظ الصحيح من وحدة الحفظ
   const body = document.getElementById('modal-body');

@@ -611,6 +611,12 @@ body.toolbar-hidden .toolbar { transform: translateY(-135%); }
   background: linear-gradient(90deg, var(--gold), var(--gold-2));
   transition: width .3s var(--ease);
 }
+.audio-diag {
+  margin-top: .6rem; padding-top: .55rem;
+  border-top: 1px dashed var(--border);
+  font-size: .72rem; line-height: 1.7; color: var(--text-2);
+  overflow-wrap: anywhere; text-align: start;
+}
 .audio-progress-label {
   font-size: .8rem; color: var(--text-2); text-align: center;
   margin-bottom: .75rem; min-height: 1.2rem; line-height: 1.6;

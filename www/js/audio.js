@@ -1,10 +1,11 @@
 // ============ مشغل الصوت ============
 // - التلاوة مدمجة داخل التطبيق: ملفات MP3 محلية (audio/NNN.mp3)
-// - على الجهاز يُستخدم المشغّل الأصلي (إضافة NativeAudio المبنية على
-//   MediaPlayer) لأنه يتجاوز مشغّل وسائط WebView الذي رفض التشغيل من
-//   خادم الأصول المحلي على بعض الهواتف. وفي المتصفح (للتطوير) نعود
-//   لعنصر <audio> القياسي.
-// - لا شبكة إطلاقاً في الحالتين: التشغيل من أصول التطبيق فقط.
+// - المحرك الأساسي على الجهاز: المشغّل الأصلي (إضافة NativeAudio فوق
+//   MediaPlayer) لأنه يتجاوز مشغّل وسائط WebView. وإن فشل الأصلي لأي
+//   سبب جرّبنا عنصر <audio> القياسي تلقائياً، وسجّلنا النتيجتين.
+// - كل محاولة ونتيجتها تُحفظ في window.__AUDIO_DIAG__ وتظهر في شاشة
+//   الإعدادات، حتى يكون سبب أي فشل ظاهراً لا مخفياً خلف رسالة عامة.
+// - لا شبكة إطلاقاً: التشغيل من أصول التطبيق فقط.
 
 const QuranAudio = {
   player: null,
@@ -18,13 +19,34 @@ const QuranAudio = {
   _nativeEnded: false,
   _nativeBound: false,
 
+  _diag: {
+    version: (typeof window !== 'undefined' && window.APP_VERSION) || '?',
+    plugin: 'unknown',  // 'present' | 'absent'
+    engine: null,
+    entries: [],
+  },
+
+  _note(kind, detail) {
+    try {
+      const d = this._diag;
+      d.engine = this._engine;
+      d.entries.push({ t: new Date().toISOString(), kind, detail: String(detail || '') });
+      if (d.entries.length > 20) d.entries.shift();
+      window.__AUDIO_DIAG__ = d;
+      window.dispatchEvent(new CustomEvent('audio-diag', { detail: d }));
+    } catch (e) {}
+  },
+
   _native() {
+    let np = null;
     try {
       if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeAudio) {
-        return window.Capacitor.Plugins.NativeAudio;
+        np = window.Capacitor.Plugins.NativeAudio;
       }
     } catch (e) {}
-    return null;
+    this._diag.plugin = np ? 'present' : 'absent';
+    try { window.__AUDIO_DIAG__ = this._diag; } catch (e) {}
+    return np;
   },
 
   isCurrent(readerKey, surahNum) {
@@ -40,7 +62,8 @@ const QuranAudio = {
     if (this._nativeBound || !np || !np.addListener) return;
     this._nativeBound = true;
     np.addListener('ended', () => { this._nativeEnded = true; this._onEnd(); });
-    np.addListener('error', () => {
+    np.addListener('error', (ev) => {
+      this._note('native-event-error', 'what=' + (ev && ev.what) + ' extra=' + (ev && ev.extra));
       this._dispatchState(false);
       this._emit('error', { readerKey: this.currentReader, surahNum: this.currentSurah, error: 'native' });
     });
@@ -67,20 +90,28 @@ const QuranAudio = {
 
     // نفس التلاوة محمّلة: استئناف فقط
     if (this.isCurrent(readerKey, surahNum)) {
-      if (np && this._engine === 'native') {
-        if (this._nativeEnded) {
-          this._nativeEnded = false;
-          await np.play({ path: 'public/' + window.RecitersModule.buildUrl(readerKey, surahNum), seek: 0 });
-        } else {
+      try {
+        if (np && this._engine === 'native') {
+          if (this._nativeEnded) {
+            this._nativeEnded = false;
+            await np.play({ path: 'public/' + window.RecitersModule.buildUrl(readerKey, surahNum), seek: 0 });
+          } else {
+            await np.resume();
+          }
+        } else if (this.player) {
+          if (this.player.ended) this.player.currentTime = 0;
+          await this.player.play();
+        } else if (np) {
           await np.resume();
         }
         this._dispatchState(true);
+        this._note('resume-ok', 'surah ' + surahNum);
         return;
-      }
-      if (this.player) {
-        if (this.player.ended) this.player.currentTime = 0;
-        await this.player.play();
-        return;
+      } catch (e) {
+        this._note('resume-failed', e && e.message);
+        // نكمل إلى تحميل جديد كامل بالأسفل
+        this.currentReader = null;
+        this.currentSurah = null;
       }
     }
 
@@ -94,24 +125,47 @@ const QuranAudio = {
     const token = ++this._token;
     this.currentReader = readerKey;
     this.currentSurah = surahNum;
-    try {
-      if (np) {
+    const failures = [];
+
+    // المحاولة 1: المشغّل الأصلي
+    if (np) {
+      try {
         this._engine = 'native';
         this._nativeEnded = false;
         this._bindNative(np);
         await np.play({ path: 'public/' + url });
-      } else {
-        this._engine = 'web';
-        await this._playSrc(url);
+        if (token !== this._token) return;
+        this._dispatchState(true);
+        this._setMediaSession(readerKey, surahNum);
+        this._note('play-ok-native', 'surah ' + surahNum);
+        this._emit('success', { readerKey, surahNum, source: 'builtin' });
+        return;
+      } catch (e) {
+        failures.push('الأصلي: ' + (e && e.message ? e.message : e));
+        this._note('play-failed-native', failures[failures.length - 1]);
       }
-      if (token !== this._token) return; // طُلبت تلاوة أحدث
+    } else {
+      this._note('plugin-absent', 'Capacitor.Plugins.NativeAudio غير موجود');
+    }
+
+    // المحاولة 2: عنصر الصوت القياسي
+    try {
+      this._engine = 'web';
+      await this._playSrc(url);
+      if (token !== this._token) return;
       this._dispatchState(true);
       this._setMediaSession(readerKey, surahNum);
+      this._note('play-ok-web', 'surah ' + surahNum);
       this._emit('success', { readerKey, surahNum, source: 'builtin' });
     } catch (e) {
+      const el = this.player;
+      const code = el && el.error ? el.error.code : null;
+      failures.push('المتصفح: ' + (e && e.message ? e.message : e) + (code ? ' (code ' + code + ')' : ''));
+      this._note('play-failed-web', failures[failures.length - 1]);
       this._dispatchState(false);
-      this._emit('error', { readerKey, surahNum, error: e && e.message });
-      throw e;
+      const err = new Error(failures.join(' | '));
+      this._emit('error', { readerKey, surahNum, error: err.message });
+      throw err;
     }
   },
 
@@ -205,3 +259,4 @@ const QuranAudio = {
 };
 
 window.QuranAudio = QuranAudio;
+try { window.__AUDIO_DIAG__ = QuranAudio._diag; } catch (e) {}
