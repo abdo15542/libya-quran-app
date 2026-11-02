@@ -1,5 +1,5 @@
 // Service Worker — شبكة أولاً (حتى تظهر التحديثات) مع احتياطي من الذاكرة
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE_STATIC = 'libya-quran-static-' + VERSION;
 const KEEP_CACHES = [CACHE_STATIC, 'libya-quran-audio-v1'];
 
@@ -22,7 +22,6 @@ const SHELL = [
   './js/translation.js',
   './js/memorization.js',
   './js/app.js',
-  './js/app-patches.js',
   './js/reading-ui.js',
 ];
 

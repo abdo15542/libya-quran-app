@@ -25,9 +25,41 @@ let audioState = {
 // ==================== التهيئة ====================
 document.addEventListener('DOMContentLoaded', init);
 
+// ==================== أدوات عامة (كانت في ملف الترقيع) ====================
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+window.escapeHtml = escapeHtml;
+
+let _toastTimer = null;
+function showUpdateToast(msg) {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.cssText =
+      'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);max-width:90%;' +
+      'background:#0a3d2c;color:#fff;padding:.6rem 1.1rem;border-radius:20px;' +
+      'font-family:inherit;font-size:.9rem;text-align:center;z-index:10001;' +
+      'box-shadow:0 4px 16px rgba(0,0,0,.35);pointer-events:none;' +
+      'opacity:0;transition:opacity .25s ease;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function () { el.style.opacity = '0'; }, 3200);
+}
+window.showUpdateToast = showUpdateToast;
+
 async function init() {
+  const savedTheme = await DB.getUserData('theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  state.theme = prefersDark ? 'dark' : 'light';
+  state.theme = savedTheme || (prefersDark ? 'dark' : 'light');
   applyTheme();
 
   state.bookmarks = (await DB.getUserData('bookmarks')) || [];
@@ -69,7 +101,14 @@ async function init() {
 
     status.textContent = 'جاهز!';
     document.getElementById('progress-fill').style.width = '100%';
-    setTimeout(showApp, 400);
+    setTimeout(async () => {
+      showApp();
+      // إعلام المُحدِّث بجاهزية التطبيق حتى لا يتراجع عن تحديث OTA
+      const updater = window.Capacitor && Capacitor.Plugins ? Capacitor.Plugins.CapacitorUpdater : null;
+      if (updater && typeof updater.notifyAppReady === 'function') {
+        try { await updater.notifyAppReady(); } catch (e) { console.warn('notifyAppReady:', e && e.message); }
+      }
+    }, 400);
     setTimeout(function() {
       if (typeof setupAutoUpdater === 'function') setupAutoUpdater();
     }, 3000);
@@ -88,6 +127,27 @@ function showApp() {
 }
 
 // ==================== الأحداث ====================
+
+// زر الرجوع في أندرويد + مزامنة زر التشغيل مع حالة المشغّل الفعلية
+function setupPlatformExtras() {
+  const App = window.Capacitor && Capacitor.Plugins ? Capacitor.Plugins.App : null;
+  if (App && typeof App.addListener === 'function') {
+    App.addListener('backButton', function () {
+      const modal = document.getElementById('modal');
+      if (modal && !modal.classList.contains('hidden')) return closeModal();
+      const sb = document.getElementById('sidebar');
+      if (sb && sb.classList.contains('open')) return toggleSidebar(false);
+      if (typeof App.exitApp === 'function') App.exitApp();
+    });
+  }
+  window.addEventListener('audio-state', function (e) {
+    const playing = !!(e.detail && e.detail.playing);
+    audioState.isPlaying = playing;
+    if (playing && window.QuranAudio) audioState.currentSurah = QuranAudio.currentSurah;
+    setPlayButton(playing && audioState.currentSurah === state.currentSurah ? '⏸ إيقاف' : '▶ تشغيل');
+  });
+}
+
 function setupEvents() {
   const menuBtn = document.getElementById('menu-btn');
   const themeBtn = document.getElementById('theme-btn');
@@ -116,6 +176,7 @@ function setupEvents() {
   if (searchInput) searchInput.oninput = debounce(onSidebarSearch, 300);
 
   window.addEventListener('scroll', updateReadingProgress, { passive: true });
+  setupPlatformExtras();
 
   document.addEventListener('click', (e) => {
     const sb = document.getElementById('sidebar');
@@ -163,6 +224,22 @@ function onSidebarSearch(e) {
 }
 
 // ==================== عرض السورة ====================
+
+// تزيين أشرطة أزرار الآيات: زر «للحفظ» + تسمية دقيقة لزر التشغيل
+function decorateVerses() {
+  document.querySelectorAll('#verses-container .verse-inline-actions').forEach(function (bar) {
+    const play = bar.querySelector('button[data-act="play"]');
+    if (play) play.textContent = '🎧 تشغيل السورة';
+    if (!bar.querySelector('button[data-act="memo"]')) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.act = 'memo';
+      btn.textContent = '📚 للحفظ';
+      bar.insertBefore(btn, bar.querySelector('button[data-act="close"]'));
+    }
+  });
+}
+
 function renderSurah(num) {
   const surahs = state.data?.surahs || [];
   const surah = surahs[num - 1];
@@ -219,7 +296,7 @@ function renderSurah(num) {
       <div class="verse-inline-content"></div>
     `;
 
-    div.addEventListener('click', (e) => {
+    div.addEventListener('click', async (e) => {
       const btn = e.target.closest('.verse-inline-actions button');
       if (btn) {
         e.stopPropagation();
@@ -229,6 +306,14 @@ function renderSurah(num) {
         else if (act === 'play')         playSurahFromVerse(num, v.number);
         else if (act === 'bookmark')     toggleVerseBookmarkInline(num, v.number, div);
         else if (act === 'note')         openVerseNoteInline(num, v.number, div);
+        else if (act === 'memo') {
+          if (window.MemoModule) {
+            try {
+              const r = await MemoModule.addVerse(num, v.number);
+              showUpdateToast(r.ok ? '✅ أُضيفت الآية لقائمة الحفظ — راجعها غداً' : '⚠ ' + r.msg);
+            } catch (err) { showUpdateToast('❌ تعذّرت الإضافة'); }
+          }
+        }
         else if (act === 'close')        closeVerseInline(div);
         return;
       }
@@ -240,6 +325,8 @@ function renderSurah(num) {
     container.appendChild(div);
   });
 
+  decorateVerses();
+  setPlayButton(audioState.isPlaying && audioState.currentSurah === num ? '⏸ إيقاف' : '▶ تشغيل');
   DB.saveUserData('last_surah', num);
   window.scrollTo({ top: 0, behavior: 'smooth' });
   applyViewMode();
@@ -266,36 +353,9 @@ function toggleInlineActions(verseEl) {
   actions.classList.toggle('hidden');
 }
 
+
 async function playSurahFromVerse(surahNum, ayahNum) {
-  if (!window.QuranAudio) return;
-
-  // إذا كان يشغّل نفس السورة
-  if (audioState.isPlaying && audioState.currentSurah === surahNum) {
-    QuranAudio.pause();
-    audioState.isPlaying = false;
-    const btn = document.getElementById('play-btn');
-    if (btn) btn.textContent = '▶ تشغيل';
-    return;
-  }
-
-  state.currentSurah = surahNum;
-  const btn = document.getElementById('play-btn');
-  if (btn) btn.textContent = '⏳ جاري التحميل...';
-
-  const surahName = state.data?.surahs?.[surahNum - 1]?.name || '';
-  showUpdateToast('🎧 جاري تشغيل سورة ' + surahName);
-
-  try {
-    await QuranAudio.play(state.reader, surahNum);
-    audioState.isPlaying = true;
-    audioState.currentSurah = surahNum;
-    if (btn) btn.textContent = '⏸ إيقاف';
-    showUpdateToast('▶ سورة ' + surahName);
-  } catch (e) {
-    if (btn) btn.textContent = '▶ تشغيل';
-    audioState.isPlaying = false;
-    showUpdateToast('❌ فشل: ' + e.message);
-  }
+  return startPlayback(surahNum);
 }
 
 
@@ -370,6 +430,14 @@ async function toggleInlineTafsir(surahNum, ayahNum, verseEl) {
   }
 }
 
+// نطاق حفص المقابل لآية قالون من بيانات المصحف المحمّلة (للتفسير والترجمة)
+function hafsRangeFor(surahNum, ayahNum) {
+  try {
+    const surah = state.data && state.data.surahs.find(x => x.number === surahNum);
+    const verse = surah && surah.verses.find(v => v.number === ayahNum);
+    return verse ? verse.hafs : null;
+  } catch (e) { return null; }
+}
 async function loadTafsirInto(content, tafsirId, surahNum, ayahNum) {
   const body = content.querySelector('.inline-body');
   if (!body) return;
@@ -377,7 +445,7 @@ async function loadTafsirInto(content, tafsirId, surahNum, ayahNum) {
 
   try {
     const data = await TafsirModule.load(tafsirId);
-    const text = TafsirModule.getVerse(data, surahNum, ayahNum);
+    const text = TafsirModule.getVerse(data, surahNum, ayahNum, hafsRangeFor(surahNum, ayahNum));
     if (text) {
       body.innerHTML = text.replace(/\n/g, '<br>');
     } else {
@@ -446,7 +514,7 @@ async function loadTranslationInto(content, lang, surahNum, ayahNum) {
 
   try {
     const data = await TranslationModule.load(lang);
-    const text = TranslationModule.getVerse(data, surahNum, ayahNum);
+    const text = TranslationModule.getVerse(data, surahNum, ayahNum, hafsRangeFor(surahNum, ayahNum));
     if (text) {
       const isRTL = ['ar', 'ber'].includes(lang);
       body.setAttribute('dir', isRTL ? 'rtl' : 'ltr');
@@ -473,17 +541,25 @@ function toggleVerseBookmarkInline(s, a, verseEl) {
   }
 }
 
+
 function openVerseNoteInline(s, a, verseEl) {
   const id = s + ':' + a;
   const note = prompt('ملاحظتك على الآية:', state.notes[id] || '');
-  if (note !== null) {
-    state.notes[id] = note;
-    DB.saveUserData('notes', state.notes);
-    const content = verseEl.querySelector('.verse-inline-content');
-    content.dataset.mode = 'note';
-    content.innerHTML = '<div class="inline-note"><strong>📝 ملاحظتك:</strong><br>' 
-                      + note.replace(/\n/g, '<br>') + '</div>';
+  if (note === null) return;
+  const content = verseEl.querySelector('.verse-inline-content');
+  const clean = note.trim();
+  if (clean) {
+    state.notes[id] = clean;
+    if (content) {
+      content.dataset.mode = 'note';
+      content.innerHTML = '<div class="inline-note"><strong>📝 ملاحظتك:</strong><br>' +
+        escapeHtml(clean).replace(/\n/g, '<br>') + '</div>';
+    }
+  } else {
+    delete state.notes[id];
+    if (content) { content.innerHTML = ''; content.dataset.mode = ''; }
   }
+  DB.saveUserData('notes', state.notes);
 }
 
 function isVerseBookmarked(s, a) {
@@ -529,27 +605,39 @@ function getAudioUrlFallback(surahNum) {
   return reader.fallback.replace('{s}', padded);
 }
 
-async function togglePlay() {
-  const btn = document.getElementById('play-btn');
+
+function setPlayButton(text) {
+  const b = document.getElementById('play-btn');
+  if (b) b.textContent = text;
+}
+
+async function startPlayback(surahNum) {
   if (!window.QuranAudio) return;
 
-  if (audioState.isPlaying) {
+  // نفس السورة تعمل الآن → إيقاف مؤقت
+  if (audioState.isPlaying && audioState.currentSurah === surahNum) {
     QuranAudio.pause();
-    if (btn) btn.textContent = '▶ تشغيل';
     audioState.isPlaying = false;
-  } else {
-    if (btn) btn.textContent = '⏳ جاري التحميل...';
-    audioState.isPlaying = true;
-
-    try {
-      await QuranAudio.play(state.reader, state.currentSurah);
-      if (btn) btn.textContent = '⏸ إيقاف';
-    } catch (e) {
-      if (btn) btn.textContent = '▶ تشغيل';
-      audioState.isPlaying = false;
-      showUpdateToast('❌ ' + e.message);
-    }
+    setPlayButton('▶ تشغيل');
+    return;
   }
+
+  state.currentSurah = surahNum;
+  setPlayButton(QuranAudio.isCurrent(state.reader, surahNum) ? '⏸ إيقاف' : '⏳ جاري التحميل...');
+  try {
+    await QuranAudio.play(state.reader, surahNum);
+    audioState.isPlaying = true;
+    audioState.currentSurah = surahNum;
+    setPlayButton('⏸ إيقاف');
+  } catch (e) {
+    audioState.isPlaying = false;
+    setPlayButton('▶ تشغيل');
+    showUpdateToast('❌ ' + (e && e.message ? e.message : 'تعذّر التشغيل'));
+  }
+}
+
+async function togglePlay() {
+  return startPlayback(state.currentSurah);
 }
 
 
@@ -662,16 +750,70 @@ function handleToolbar(action) {
 }
 
 
+
 function showBookmarks() {
-  if (!state.bookmarks.length) return openModal('العلامات', 'لا توجد علامات بعد.');
-  const html = state.bookmarks.map(id => {
-    const [s, a] = id.split(':');
-    const meta = state.surahsMeta.find(x => x.n === +s);
-    return `<button onclick="goToVerse(${s},${a})" style="display:block;width:100%;text-align:right;padding:.5rem;margin:.25rem 0;background:var(--verse-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer">
-      ${meta?.name || 'سورة'} — آية ${a}
-    </button>`;
-  }).join('');
-  openModal('العلامات', html);
+  const ITEM_STYLE = 'display:block;width:100%;text-align:right;padding:.5rem;margin:.25rem 0;' +
+    'background:var(--verse-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer;' +
+    'font-family:inherit;color:inherit';
+  const surahName = function (n) {
+    const m = state.surahsMeta.find(function (x) { return x.n === n; });
+    return (m && m.name) || ('سورة ' + n);
+  };
+  const bookmarks = state.bookmarks.slice();
+  const notes = Object.entries(state.notes).filter(function (e) { return e[1]; });
+
+  if (!bookmarks.length && !notes.length) {
+    return openModal('العلامات والملاحظات', 'لا توجد علامات أو ملاحظات بعد.');
+  }
+
+  let html = '';
+  if (bookmarks.length) {
+    html += '<h4 style="margin:.5rem 0">🔖 العلامات</h4>';
+    bookmarks.forEach(function (id) {
+      const p = id.split(':');
+      html += '<div style="display:flex;gap:.25rem">' +
+        '<button data-go="' + escapeHtml(id) + '" style="' + ITEM_STYLE + ';flex:1">' +
+        escapeHtml(surahName(+p[0])) + ' — آية ' + escapeHtml(p[1]) + '</button>' +
+        '<button data-rm-bm="' + escapeHtml(id) + '" style="' + ITEM_STYLE + ';width:auto" aria-label="حذف">✕</button></div>';
+    });
+  }
+  if (notes.length) {
+    html += '<h4 style="margin:1rem 0 .5rem">📝 الملاحظات</h4>';
+    notes.forEach(function (entry) {
+      const key = entry[0], text = entry[1];
+      const p = key.split(':');
+      const isSurahNote = p[0] === 'surah';
+      const s = isSurahNote ? +p[1] : +p[0];
+      const a = isSurahNote ? 1 : +p[1];
+      const label = isSurahNote ? 'ملاحظة على سورة ' + surahName(s) : surahName(s) + ' — آية ' + a;
+      html += '<div style="display:flex;gap:.25rem">' +
+        '<button data-go="' + s + ':' + a + '" style="' + ITEM_STYLE + ';flex:1">' +
+        '<strong>' + escapeHtml(label) + '</strong><br>' +
+        '<span style="white-space:pre-wrap;opacity:.85">' + escapeHtml(text) + '</span></button>' +
+        '<button data-rm-note="' + escapeHtml(key) + '" style="' + ITEM_STYLE + ';width:auto" aria-label="حذف">✕</button></div>';
+    });
+  }
+
+  openModal('العلامات والملاحظات', html);
+
+  const body = document.getElementById('modal-body');
+  body.querySelectorAll('[data-go]').forEach(function (b) {
+    b.onclick = function () { const p = b.dataset.go.split(':'); goToVerse(+p[0], +p[1]); };
+  });
+  body.querySelectorAll('[data-rm-bm]').forEach(function (b) {
+    b.onclick = function () {
+      state.bookmarks = state.bookmarks.filter(function (x) { return x !== b.dataset.rmBm; });
+      DB.saveUserData('bookmarks', state.bookmarks);
+      showBookmarks();
+    };
+  });
+  body.querySelectorAll('[data-rm-note]').forEach(function (b) {
+    b.onclick = function () {
+      delete state.notes[b.dataset.rmNote];
+      DB.saveUserData('notes', state.notes);
+      showBookmarks();
+    };
+  });
 }
 
 function goToVerse(s, a) {
@@ -688,12 +830,15 @@ function goToVerse(s, a) {
   }, 300);
 }
 
+
 function openNote() {
-  const note = prompt('ملاحظتك على السورة:');
-  if (note) {
-    state.notes['surah:' + state.currentSurah] = note;
-    DB.saveUserData('notes', state.notes);
-  }
+  const key = 'surah:' + state.currentSurah;
+  const note = prompt('ملاحظتك على السورة:', state.notes[key] || '');
+  if (note === null) return;
+  const clean = note.trim();
+  if (clean) state.notes[key] = clean; else delete state.notes[key];
+  DB.saveUserData('notes', state.notes);
+  showUpdateToast('📝 تم الحفظ');
 }
 
 function openSettingsNew() {
@@ -757,6 +902,40 @@ function openSettingsNew() {
 
   // احسب الإحصاءات
   updateAudioStatsUI();
+
+  // زر إيقاف تحميل الصوت + عدّاد المحفوظ الصحيح من وحدة الحفظ
+  const body = document.getElementById('modal-body');
+  if (body) {
+    const actions = body.querySelector('.audio-download-actions');
+    if (actions && !actions.querySelector('[data-cancel-dl]')) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'audio-dl-btn-danger';
+      cancel.dataset.cancelDl = '1';
+      cancel.textContent = '⏹ إيقاف التحميل';
+      cancel.onclick = function () {
+        if (window.AudioDownloader && AudioDownloader.isDownloading()) {
+          AudioDownloader.cancel();
+          showUpdateToast('⏹ سيتوقف التحميل بعد السورة الحالية');
+        } else {
+          showUpdateToast('لا يوجد تحميل جارٍ');
+        }
+      };
+      actions.appendChild(cancel);
+    }
+    if (window.MemoModule) {
+      MemoModule.stats().then(function (s) {
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = walker.nextNode())) {
+          if (/آيات محفوظة:\s*\d+/.test(n.nodeValue)) {
+            n.nodeValue = n.nodeValue.replace(/(آيات محفوظة:\s*)\d+/, '$1' + s.total);
+            break;
+          }
+        }
+      }).catch(function () {});
+    }
+  }
 }
 
 async function updateAudioStatsUI() {
@@ -1187,29 +1366,43 @@ async function setupAutoUpdater() {
   }
 }
 
+
+function cmpVersion(a, b) {
+  const pa = String(a).split(/[.\-]/).map(function (x) { return parseInt(x, 10) || 0; });
+  const pb = String(b).split(/[.\-]/).map(function (x) { return parseInt(x, 10) || 0; });
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
 async function checkForUpdates() {
   const { CapacitorUpdater, LocalNotifications } = Capacitor.Plugins;
+  if (!CapacitorUpdater) return;
 
   try {
-    // جلب معلومات التحديث من GitHub
-    const res = await fetch('https://github.com/abdo15542/libya-quran-app/releases/latest/download/update.json?_=' + Date.now());
+    const res = await fetch(
+      'https://github.com/abdo15542/libya-quran-app/releases/latest/download/update.json?_=' + Date.now(),
+      { cache: 'no-store' }
+    );
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const remote = await res.json();
 
-    // الإصدار الحالي
     const current = await CapacitorUpdater.current();
-    const currentVersion = current?.bundle?.version || 'builtin';
+    let currentVersion = current && current.bundle && current.bundle.version;
+    if (!currentVersion || currentVersion === 'builtin') currentVersion = window.APP_VERSION || '0.0.0';
 
-    console.log('📌 الإصدار الحالي:', currentVersion);
-    console.log('📌 الإصدار المتوفر:', remote.version);
+    if (!remote.version || cmpVersion(remote.version, currentVersion) <= 0) {
+      console.log('✓ أنت على أحدث إصدار (' + currentVersion + ')');
+      return;
+    }
 
-    // هل يوجد تحديث جديد؟
-    if (remote.version && remote.version !== currentVersion) {
-      _updateInfo = remote;
-      console.log('🎉 تحديث جديد متوفر:', remote.version);
+    _updateInfo = remote;
+    console.log('🎉 تحديث جديد متوفر:', remote.version);
 
-      // إظهار إشعار
-      if (LocalNotifications) {
+    if (LocalNotifications) {
+      try {
         await LocalNotifications.schedule({
           notifications: [{
             id: 1001,
@@ -1223,16 +1416,12 @@ async function checkForUpdates() {
             autoCancel: true,
           }]
         });
-        console.log('✓ تم إظهار الإشعار');
-      }
-
-      // إظهار شريط داخل التطبيق أيضاً
-      showUpdateBanner(remote.version);
-    } else {
-      console.log('✓ أنت على أحدث إصدار');
+      } catch (e) { console.warn('إشعار التحديث:', e && e.message); }
     }
+
+    showUpdateBanner(remote.version);
   } catch (e) {
-    console.warn('فحص التحديثات:', e.message);
+    console.warn('فحص التحديثات:', e && e.message);
   }
 }
 
@@ -1427,18 +1616,22 @@ function revealVerse() {
   if (buttons) buttons.classList.remove('hidden');
 }
 
+
 async function answerReview(difficulty) {
   const item = _reviewQueue[_reviewCurrentIdx];
-  const result = await MemoModule.review(item.s, item.a, difficulty);
+  if (!item) return closeModal();
+
+  let result = null;
+  try { result = await MemoModule.review(item.s, item.a, difficulty); } catch (e) { console.warn(e); }
   _reviewSessionStats[difficulty]++;
 
-  const msg = difficulty === 'easy'
-    ? '✅ ممتاز! المراجعة القادمة بعد ' + result.nextInDays + ' يوم'
-    : difficulty === 'medium'
-      ? '👍 جيد! راجع مجدداً بعد ' + result.nextInDays + ' يوم'
-      : '💪 لا بأس، أعِد المراجعة بعد ' + result.nextInDays + ' يوم';
-
-  showUpdateToast(msg);
+  if (result) {
+    showUpdateToast(
+      difficulty === 'easy' ? '✅ ممتاز! المراجعة القادمة بعد ' + result.nextInDays + ' يوم'
+      : difficulty === 'medium' ? '👍 جيد! راجع مجدداً بعد ' + result.nextInDays + ' يوم'
+      : '💪 لا بأس، أعِد المراجعة بعد ' + result.nextInDays + ' يوم'
+    );
+  }
   _reviewCurrentIdx++;
   setTimeout(showReviewCard, 800);
 }

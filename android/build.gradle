@@ -1,10 +1,11 @@
 buildscript {
     repositories {
+        google()
+        mavenCentral()
+        // مرايا احتياطية عند تعذّر الوصول للمستودعات الرسمية
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        google()
-        mavenCentral()
     }
     dependencies {
         // تحديث AGP لدعم SDK 35
@@ -17,12 +18,13 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+        // مرايا احتياطية عند تعذّر الوصول للمستودعات الرسمية
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        maven { url 'https://jitpack.io' }
-        google()
-        mavenCentral()
     }
 }
 

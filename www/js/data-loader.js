@@ -61,7 +61,7 @@ async function loadFullQuran(onProgress = () => {}) {
   // 1. IndexedDB
   try {
     const cached = await DB.dbGet('quran', 'text');
-    if (cached && cached.surahs && cached.surahs.length >= 100) {
+    if (cached && cached._nv === 3 && cached.surahs && cached.surahs.length >= 100) {
       _quranCache = cached;
       onProgress(1);
       console.log('✓ تحميل من IndexedDB');
@@ -101,7 +101,7 @@ async function loadFullQuran(onProgress = () => {}) {
 // ============ توحيد البنية ============
 function normalizeQuran(raw) {
   const surahArray = extractSurahArray(raw);
-  return { surahs: surahArray };
+  return { surahs: surahArray, _nv: 3 };
 }
 
 function extractSurahArray(raw) {
@@ -157,6 +157,8 @@ function normalizeVerse(v, defaultNum) {
   return {
     number: v.number || v.n || v.id || v.ayah || v.verse_number || defaultNum,
     text:   v.text || v.arab || v.arabic || v.arabic_text || v.content || '',
+    // نطاق أرقام الآية المقابلة في عدّ حفص (تستخدمه التفاسير والترجمات المرقّمة بحفص)
+    hafs:   Array.isArray(v.number_in_hafs) && v.number_in_hafs.length ? v.number_in_hafs : null,
   };
 }
 

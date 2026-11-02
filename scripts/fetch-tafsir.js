@@ -40,6 +40,10 @@ async function fetchTafsir(tafsir) {
   }
 
   console.log('\n  النتيجة: ' + ok + '/114 نجحت، ' + fail + ' فشلت');
+  if (fail > 0) {
+    // لا تحفظ تفسيرًا ناقصًا بصمت — هذا ما تسبب سابقًا في غياب سور كاملة من الجلالين والقرطبي
+    throw new Error('تفسير ' + tafsir.id + ' ناقص: ' + fail + ' سورة فشل تحميلها — لم يُحفظ الملف');
+  }
   const outFile = path.join(DATA_DIR, 'tafsir-' + tafsir.id + '.json');
   fs.writeFileSync(outFile, JSON.stringify(result));
   console.log('  💾 حُفظ في: ' + path.basename(outFile));

@@ -3,12 +3,11 @@
   "appName": "مصحف ليبيا",
   "webDir": "www",
   "server": {
-    "cleartext": true,
     "hostname": "localhost",
     "androidScheme": "https"
   },
   "android": {
-    "allowMixedContent": true,
+    "allowMixedContent": false,
     "webContentsDebuggingEnabled": false
   },
   "plugins": {

@@ -20,8 +20,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            // توقيع دائم يُمرَّر من الخارج (محليًا أو من أسرار GitHub Actions) — لا يُحفظ في المستودع
+            if (project.hasProperty('quranKeystoreFile')) {
+                storeFile file(project.property('quranKeystoreFile'))
+                storePassword project.property('quranKeystorePassword')
+                keyAlias project.property('quranKeyAlias')
+                keyPassword project.property('quranKeyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (project.hasProperty('quranKeystoreFile')) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

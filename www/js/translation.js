@@ -85,12 +85,21 @@ async function loadTranslation(lang) {
   return data;
 }
 
-function getVerseTranslation(data, surahNum, ayahNum) {
+function getVerseTranslation(data, surahNum, ayahNum, hafsRange) {
   if (!data || !data.verses) return null;
-  const entry = data.verses.find(v => 
-    (v.chapter === surahNum || v.surah === surahNum) && 
-    (v.verse === ayahNum || v.ayah === ayahNum)
-  );
+  const inSurah = v => (v.chapter === surahNum || v.surah === surahNum);
+  const numOf = v => (v.verse !== undefined ? v.verse : v.ayah);
+  // الترجمات مرقّمة بعدّ حفص: عند توفر النطاق المقابل نجمع ترجماته كاملة.
+  if (Array.isArray(hafsRange) && hafsRange.length) {
+    const lo = hafsRange[0], hi = hafsRange[hafsRange.length - 1];
+    const parts = data.verses
+      .filter(v => inSurah(v) && numOf(v) >= lo && numOf(v) <= hi)
+      .sort((a, b) => numOf(a) - numOf(b))
+      .map(v => v.text || '')
+      .filter(Boolean);
+    if (parts.length) return parts.join(' ');
+  }
+  const entry = data.verses.find(v => inSurah(v) && numOf(v) === ayahNum);
   return entry ? (entry.text || '') : null;
 }
 

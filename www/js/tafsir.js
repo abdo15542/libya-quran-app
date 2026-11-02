@@ -86,10 +86,20 @@ async function loadTafsir(tafsirId) {
   return data;
 }
 
-function getVerseTafsir(tafsirData, surahNum, ayahNum) {
+function getVerseTafsir(tafsirData, surahNum, ayahNum, hafsRange) {
   if (!tafsirData || !tafsirData.surahs) return null;
   const surah = tafsirData.surahs.find(s => s.number === surahNum);
   if (!surah || !surah.verses) return null;
+  // بيانات التفسير مرقّمة بعدّ حفص، ونص المصحف بعدّ قالون (المدني):
+  // عند توفر نطاق حفص المقابل للآية نطابق به بدل الرقم المباشر.
+  if (Array.isArray(hafsRange) && hafsRange.length) {
+    const lo = hafsRange[0], hi = hafsRange[hafsRange.length - 1];
+    const parts = surah.verses
+      .filter(v => { const n = (v.ayah || v.number); return n >= lo && n <= hi; })
+      .map(v => v.text || v.tafsir || '')
+      .filter(Boolean);
+    if (parts.length) return parts.join('\n\n');
+  }
   const entry = surah.verses.find(v => (v.ayah || v.number) === ayahNum);
   return entry ? (entry.text || entry.tafsir || '') : null;
 }
