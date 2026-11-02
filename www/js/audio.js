@@ -23,7 +23,27 @@ const QuranAudio = {
     version: (typeof window !== 'undefined' && window.APP_VERSION) || '?',
     plugin: 'unknown',  // 'present' | 'absent'
     engine: null,
+    probe: null,        // نتيجة الفحص الأرضي من الإضافة الأصلية
     entries: [],
+  },
+
+  // فحص أرضي لمرة واحدة: ماذا تحتوي النسخة المثبتة فعليًا؟
+  async probe() {
+    const np = this._native();
+    if (!np || typeof np.probe !== 'function') return null;
+    if (this._diag.probe) return this._diag.probe;
+    try {
+      const p = await np.probe();
+      this._diag.probe = p;
+      this._note('probe', 'apkMB=' + Math.round((p.apkBytes || 0) / 1048576) +
+        ' audioCount=' + p.audioCount +
+        ' fd=' + (p.fdBytes != null ? p.fdBytes : (p.fdError || '?')) +
+        ' stream=' + (p.streamRead != null ? p.streamRead : (p.streamError || '?')));
+      return p;
+    } catch (e) {
+      this._note('probe-failed', e && e.message);
+      return null;
+    }
   },
 
   _note(kind, detail) {
@@ -87,6 +107,7 @@ const QuranAudio = {
 
   async play(readerKey, surahNum) {
     const np = this._native();
+    if (np) this.probe(); // فحص أرضي في الخلفية لتشخيص النسخة المثبتة
 
     // نفس التلاوة محمّلة: استئناف فقط
     if (this.isCurrent(readerKey, surahNum)) {
@@ -126,6 +147,7 @@ const QuranAudio = {
     this.currentReader = readerKey;
     this.currentSurah = surahNum;
     const failures = [];
+    let missingFile = false;
 
     // المحاولة 1: المشغّل الأصلي
     if (np) {
@@ -141,7 +163,9 @@ const QuranAudio = {
         this._emit('success', { readerKey, surahNum, source: 'builtin' });
         return;
       } catch (e) {
-        failures.push('الأصلي: ' + (e && e.message ? e.message : e));
+        const msg = e && e.message ? e.message : String(e);
+        if (msg.indexOf('FileNotFoundException') >= 0) missingFile = true;
+        failures.push('الأصلي: ' + msg);
         this._note('play-failed-native', failures[failures.length - 1]);
       }
     } else {
@@ -163,7 +187,9 @@ const QuranAudio = {
       failures.push('المتصفح: ' + (e && e.message ? e.message : e) + (code ? ' (code ' + code + ')' : ''));
       this._note('play-failed-web', failures[failures.length - 1]);
       this._dispatchState(false);
-      const err = new Error(failures.join(' | '));
+      const err = new Error(missingFile
+        ? 'ملفات الصوت غير موجودة داخل النسخة المثبّتة على هاتفك — هذه نسخة بلا تلاوة مدمجة. ثبّت الملف الكامل المرفق في المحادثة (468 MB) ثم جرّب مجددًا'
+        : failures.join(' | '));
       this._emit('error', { readerKey, surahNum, error: err.message });
       throw err;
     }

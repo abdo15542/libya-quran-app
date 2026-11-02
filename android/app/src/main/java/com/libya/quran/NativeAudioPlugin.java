@@ -106,6 +106,55 @@ public class NativeAudioPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /**
+     * فحص أرضي للحقيقة داخل النسخة المثبتة فعليًا على الجهاز:
+     * حجم ملف APK المثبت، وقائمة ملفات الصوت كما يراها مدير الأصول،
+     * ومحاولة فتح وقراءة أول ملف — حتى لا نعتمد على أي بيان ثابت.
+     */
+    @PluginMethod
+    public void probe(PluginCall call) {
+        main.post(() -> {
+            JSObject ret = new JSObject();
+            try {
+                Context ctx = getContext();
+                String src = ctx.getApplicationInfo().sourceDir;
+                ret.put("apkPath", src);
+                ret.put("apkBytes", new File(src).length());
+                android.content.res.AssetManager am = ctx.getAssets();
+                try {
+                    String[] audio = am.list("public/audio");
+                    ret.put("audioCount", audio != null ? audio.length : -1);
+                    if (audio != null && audio.length > 0) ret.put("audioFirst", audio[0]);
+                } catch (Throwable t) {
+                    ret.put("audioListError", describe(t));
+                }
+                try {
+                    String[] data = am.list("public/data");
+                    ret.put("dataCount", data != null ? data.length : -1);
+                } catch (Throwable t) {
+                    ret.put("dataListError", describe(t));
+                }
+                try {
+                    AssetFileDescriptor afd = am.openFd("public/audio/001.mp3");
+                    ret.put("fdBytes", afd.getLength());
+                    afd.close();
+                } catch (Throwable t) {
+                    ret.put("fdError", describe(t));
+                }
+                try (InputStream in = am.open("public/audio/001.mp3")) {
+                    ret.put("streamRead", in.read(new byte[8192]));
+                } catch (Throwable t) {
+                    ret.put("streamError", describe(t));
+                }
+                ret.put("sdk", Build.VERSION.SDK_INT);
+                ret.put("model", Build.MODEL != null ? Build.MODEL : "");
+            } catch (Throwable t) {
+                ret.put("probeError", describe(t));
+            }
+            call.resolve(ret);
+        });
+    }
+
     @PluginMethod
     public void play(PluginCall call) {
         String path = call.getString("path");

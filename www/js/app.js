@@ -642,6 +642,15 @@ function renderAudioDiag() {
     ' · الإضافة الأصلية: ' + (d.plugin === 'present' ? 'موجودة' : d.plugin === 'absent' ? 'غير موجودة' : '؟') +
     ' · المحرك: ' + (d.engine || '—') +
     (last ? ' · آخر حدث: ' + last.kind + (last.detail ? ' (' + String(last.detail).slice(0, 90) + ')' : '') : '');
+  const p = d.probe;
+  if (p) {
+    el.textContent += ' · حجم النسخة المثبتة: ' + Math.round((p.apkBytes || 0) / 1048576) + ' MB' +
+      ' · ملفات الصوت فعليًا داخل النسخة: ' + (typeof p.audioCount === 'number' ? p.audioCount : '؟');
+    if (typeof updateAudioStatsUI === 'function') updateAudioStatsUI();
+  } else if (d.plugin === 'present' && !window.__PROBE_TRIED__ && window.QuranAudio && QuranAudio.probe) {
+    window.__PROBE_TRIED__ = true;
+    QuranAudio.probe();
+  }
 }
 window.addEventListener('audio-diag', renderAudioDiag);
 
@@ -884,14 +893,22 @@ async function updateAudioStatsUI() {
   if (!window.AudioDownloader) return;
   try {
     const stats = await AudioDownloader.getStats();
-    const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
     const box = document.getElementById('audio-stats-text');
-    if (box) {
-      box.innerHTML = '🎧 مدمجة داخل التطبيق: <strong>' + stats.count + ' / 114</strong> سورة (' + sizeMB + ' MB) — تعمل بدون إنترنت';
-    }
-    
-    const pct = Math.round((stats.count / 114) * 100);
     const fill = document.getElementById('audio-progress-fill');
+    // الحقيقة أولًا: إن وُجد فحص أرضي من الإضافة الأصلية فهو المرجع،
+    // لأن بيان البناء الثابت لا يثبت وجود الملفات في النسخة المثبتة.
+    const d = window.__AUDIO_DIAG__ || {};
+    const real = d.probe && typeof d.probe.audioCount === 'number' ? d.probe.audioCount : null;
+    if (box) {
+      if (real !== null) {
+        box.innerHTML = '🎧 موجود فعليًا داخل النسخة المثبتة: <strong>' + real + ' / 114</strong> ملف تلاوة' +
+          (real === 0 ? ' — ⚠️ هذه النسخة بلا صوت مدمج' : ' — تعمل بدون إنترنت');
+      } else {
+        const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
+        box.innerHTML = '🎧 مدمجة داخل التطبيق: <strong>' + stats.count + ' / 114</strong> سورة (' + sizeMB + ' MB) — تعمل بدون إنترنت';
+      }
+    }
+    const pct = Math.round(((real !== null ? real : stats.count) / 114) * 100);
     if (fill) fill.style.width = pct + '%';
   } catch (e) {
     console.warn('إحصاءات الصوت:', e);
