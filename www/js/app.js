@@ -623,7 +623,7 @@ async function startPlayback(surahNum) {
   } catch (e) {
     audioState.isPlaying = false;
     setPlayButton('▶ تشغيل');
-    showUpdateToast('❌ ' + (e && e.message ? e.message : 'تعذّر التشغيل'));
+    showUpdateToast('❌ تعذّر تشغيل الصوت — أعد المحاولة');
   }
 }
 

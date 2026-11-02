@@ -1,2 +1,2 @@
 // بيان الصوت المدمج — يُولّد تلقائيًا عند البناء (التلاوة كاملة داخل التطبيق)
-window.AUDIO_BUNDLED = { count: 114, totalBytes: 433230243 };
+window.AUDIO_BUNDLED = { count: 114, totalBytes: 448977404 };
