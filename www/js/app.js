@@ -644,12 +644,14 @@ function renderAudioDiag() {
     (last ? ' · آخر حدث: ' + last.kind + (last.detail ? ' (' + String(last.detail).slice(0, 90) + ')' : '') : '');
   const p = d.probe;
   if (p) {
-    el.textContent += ' · حجم النسخة المثبتة: ' + Math.round((p.apkBytes || 0) / 1048576) + ' MB' +
-      ' · ملفات الصوت فعليًا داخل النسخة: ' + (typeof p.audioCount === 'number' ? p.audioCount : '؟');
-    if (typeof updateAudioStatsUI === 'function') updateAudioStatsUI();
+    el.textContent += ' · حجم النسخة المثبتة: ' + Math.round((p.apkBytes || 0) / 1048576) + ' MB';
   } else if (d.plugin === 'present' && !window.__PROBE_TRIED__ && window.QuranAudio && QuranAudio.probe) {
     window.__PROBE_TRIED__ = true;
     QuranAudio.probe();
+  }
+  const sm = window.__AUDIO_STORE__;
+  if (sm && sm.ready) {
+    el.textContent += ' · التلاوات المنزّلة على الجهاز: ' + sm.doneCount + '/114' + (sm.running ? ' (جارٍ التنزيل)' : '');
   }
 }
 window.addEventListener('audio-diag', renderAudioDiag);
@@ -833,16 +835,22 @@ function openSettingsNew() {
       </select>
 
       <div class="audio-download-box" id="audio-download-box">
-        <div class="audio-download-header">🎵 المصحف الصوتي — مدمج بالكامل</div>
+        <div class="audio-download-header">🎵 المصحف الصوتي — تلاوة عبد الباسط عبد الصمد</div>
         <div class="audio-download-info" id="audio-stats-text">
           ⏳ جاري حساب...
         </div>
         <div class="audio-progress-bar">
           <div class="audio-progress-fill" id="audio-progress-fill" style="width:0%"></div>
         </div>
-        <div class="audio-download-note">
-          🎧 تلاوة عبد الباسط عبد الصمد كاملة (114 سورة) مدمجة داخل التطبيق —
-          تعمل فوراً وبدون إنترنت نهائياً، بلا تحميل وبلا مساحة إضافية.
+        <div class="audio-download-note" id="audio-speed-line">
+          التلاوة كاملة (114 سورة، 449 MB) تُنزّل مرة واحدة وتُحفظ على جهازك،
+          وتعمل بعدها بدون إنترنت نهائيًا. التنزيل سريع ومتوازٍ، ويمكنك
+          إيقافه واستئنافه في أي وقت دون أن يضيع ما اكتمل.
+        </div>
+        <div class="audio-dl-btns">
+          <button type="button" class="audio-dl-btn primary" id="btn-dl-start">⬇️ تنزيل / استئناف</button>
+          <button type="button" class="audio-dl-btn" id="btn-dl-pause">⏸️ إيقاف مؤقت</button>
+          <button type="button" class="audio-dl-btn danger" id="btn-dl-delete">🗑️ حذف التنزيلات</button>
         </div>
         <div class="audio-diag" id="audio-diag-line">🔎 تشخيص الصوت: —</div>
       </div>
@@ -869,6 +877,7 @@ function openSettingsNew() {
 
   // احسب الإحصاءات
   updateAudioStatsUI();
+  wireAudioDownloadButtons();
   renderAudioDiag();
 
   // عدّاد المحفوظ الصحيح من وحدة الحفظ
@@ -890,30 +899,69 @@ function openSettingsNew() {
 }
 
 async function updateAudioStatsUI() {
-  if (!window.AudioDownloader) return;
+  const box = document.getElementById('audio-stats-text');
+  if (!box) return;
   try {
-    const stats = await AudioDownloader.getStats();
-    const box = document.getElementById('audio-stats-text');
+    const m = (window.AudioStore && AudioStore.present())
+      ? await AudioStore.refresh()
+      : { doneCount: 0, doneBytes: 0, totalBytes: (window.AUDIO_REMOTE || {}).totalBytes || 448977404, running: false };
+    const total = m.totalBytes || 448977404;
+    const doneMB = (m.doneBytes / 1048576).toFixed(1);
+    const totalMB = (total / 1048576).toFixed(1);
+    if (m.doneCount >= 114) {
+      box.innerHTML = '✅ التلاوة كاملة على جهازك: <strong>114 / 114</strong> سورة (' + totalMB + ' MB) — تعمل بدون إنترنت';
+    } else if (m.running) {
+      box.innerHTML = '⬇️ جارٍ التنزيل: <strong>' + m.doneCount + ' / 114</strong> سورة — ' + doneMB + ' من ' + totalMB + ' MB';
+    } else if (m.doneBytes > 0) {
+      box.innerHTML = '⏸️ التنزيل متوقف: <strong>' + m.doneCount + ' / 114</strong> سورة — ' + doneMB + ' من ' + totalMB + ' MB (استأنف متى شئت)';
+    } else {
+      box.innerHTML = '🎧 لم تُنزّل التلاوة بعد: <strong>0 / 114</strong> سورة — الحجم الكلي ' + totalMB + ' MB';
+    }
     const fill = document.getElementById('audio-progress-fill');
-    // الحقيقة أولًا: إن وُجد فحص أرضي من الإضافة الأصلية فهو المرجع،
-    // لأن بيان البناء الثابت لا يثبت وجود الملفات في النسخة المثبتة.
-    const d = window.__AUDIO_DIAG__ || {};
-    const real = d.probe && typeof d.probe.audioCount === 'number' ? d.probe.audioCount : null;
-    if (box) {
-      if (real !== null) {
-        box.innerHTML = '🎧 موجود فعليًا داخل النسخة المثبتة: <strong>' + real + ' / 114</strong> ملف تلاوة' +
-          (real === 0 ? ' — ⚠️ هذه النسخة بلا صوت مدمج' : ' — تعمل بدون إنترنت');
-      } else {
-        const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
-        box.innerHTML = '🎧 مدمجة داخل التطبيق: <strong>' + stats.count + ' / 114</strong> سورة (' + sizeMB + ' MB) — تعمل بدون إنترنت';
+    if (fill) fill.style.width = Math.round((m.doneBytes / total) * 100) + '%';
+    const speed = document.getElementById('audio-speed-line');
+    if (speed && window.AudioStore) {
+      const mbps = AudioStore.speedMbps();
+      if (m.running && mbps > 0.05) {
+        const remainMB = (total - m.doneBytes) / 1048576;
+        const eta = Math.max(1, Math.round(remainMB / mbps / 60));
+        speed.textContent = '⚡ سرعة التنزيل الآن: ' + mbps.toFixed(1) + ' MB/s — المتبقي تقريبًا ' + eta + ' دقيقة';
+      } else if (m.doneCount >= 114) {
+        speed.textContent = '✅ اكتمل التنزيل — كل التلاوة على جهازك وتعمل دون إنترنت.';
       }
     }
-    const pct = Math.round(((real !== null ? real : stats.count) / 114) * 100);
-    if (fill) fill.style.width = pct + '%';
+    const bStart = document.getElementById('btn-dl-start');
+    const bPause = document.getElementById('btn-dl-pause');
+    const bDel = document.getElementById('btn-dl-delete');
+    if (bStart) bStart.style.display = (!m.running && m.doneCount < 114) ? '' : 'none';
+    if (bPause) bPause.style.display = m.running ? '' : 'none';
+    if (bDel) bDel.style.display = m.doneBytes > 0 ? '' : 'none';
   } catch (e) {
     console.warn('إحصاءات الصوت:', e);
   }
 }
+
+// أزرار التنزيل في الإعدادات + تحديث حي مع كل حدث من المخزن
+function wireAudioDownloadButtons() {
+  const bStart = document.getElementById('btn-dl-start');
+  const bPause = document.getElementById('btn-dl-pause');
+  const bDel = document.getElementById('btn-dl-delete');
+  if (bStart && !bStart._wired) {
+    bStart._wired = true;
+    bStart.addEventListener('click', async () => { await AudioStore.startAll(); updateAudioStatsUI(); });
+  }
+  if (bPause && !bPause._wired) {
+    bPause._wired = true;
+    bPause.addEventListener('click', async () => { await AudioStore.pauseAll(); updateAudioStatsUI(); });
+  }
+  if (bDel && !bDel._wired) {
+    bDel._wired = true;
+    bDel.addEventListener('click', async () => { await AudioStore.deleteAll(); updateAudioStatsUI(); });
+  }
+}
+window.addEventListener('audio-store', () => {
+  if (document.getElementById('audio-stats-text')) updateAudioStatsUI();
+});
 
 // (أُزيلت وظائف تحميل/حذف الصوت في 1.2.0 — التلاوة مدمجة داخل التطبيق)
 

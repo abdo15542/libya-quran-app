@@ -617,6 +617,19 @@ body.toolbar-hidden .toolbar { transform: translateY(-135%); }
   font-size: .72rem; line-height: 1.7; color: var(--text-2);
   overflow-wrap: anywhere; text-align: start;
 }
+.audio-dl-btns {
+  display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .7rem;
+}
+.audio-dl-btn {
+  flex: 1 1 auto; padding: .55rem .8rem; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface, #fff);
+  color: var(--text); font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.audio-dl-btn.primary {
+  background: var(--gold); border-color: var(--gold); color: #231a05;
+}
+.audio-dl-btn.danger { color: #c0392b; }
+.audio-dl-btn:active { transform: scale(.98); }
 .audio-progress-label {
   font-size: .8rem; color: var(--text-2); text-align: center;
   margin-bottom: .75rem; min-height: 1.2rem; line-height: 1.6;

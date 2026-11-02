@@ -157,16 +157,28 @@ public class NativeAudioPlugin extends Plugin {
 
     @PluginMethod
     public void play(PluginCall call) {
+        // منذ 1.4.0: التشغيل الأساسي من ملف منزّل على الجهاز (filePath)،
+        // ومسار الأصول (path) يبقى مدعومًا كما هو.
+        String filePath = call.getString("filePath");
         String path = call.getString("path");
+        if (filePath != null && new File(filePath).exists()) {
+            Double seek = call.getDouble("seek");
+            main.post(() -> playOnMain(filePath, seek, call, true));
+            return;
+        }
         if (path == null) {
             call.reject("مسار الصوت مفقود");
             return;
         }
         Double seek = call.getDouble("seek");
-        main.post(() -> playOnMain(path, seek, call));
+        main.post(() -> playOnMain(path, seek, call, false));
     }
 
     private void playOnMain(String path, Double seek, PluginCall call) {
+        playOnMain(path, seek, call, false);
+    }
+
+    private void playOnMain(String path, Double seek, PluginCall call, boolean isLocalFile) {
         try {
             // نفس الملف محمّل: استئناف أو إعادة من موضع
             if (player != null && path.equals(currentPath)) {
@@ -186,12 +198,23 @@ public class NativeAudioPlugin extends Plugin {
                 pendingPlay = null;
             }
 
-            // سلسلة البدائل: (1) واصف الأصل، (2) ملف منسوخ في الذاكرة المؤقتة
+            // سلسلة البدائل: ملف محلي منزّل مباشرة، أو (1) واصف الأصل،
+            // (2) ملف منسوخ في الذاكرة المؤقتة
             StringBuilder errors = new StringBuilder();
             MediaPlayer mp = null;
             String kind = "";
 
-            try {
+            if (isLocalFile) {
+                try {
+                    mp = newPlayer();
+                    mp.setDataSource(path);
+                    kind = "local";
+                } catch (Throwable t1) {
+                    errors.append("local: ").append(describe(t1));
+                    try { if (mp != null) mp.release(); } catch (Exception ignored) {}
+                    mp = null;
+                }
+            } else try {
                 mp = newPlayer();
                 AssetFileDescriptor afd = getContext().getAssets().openFd(path);
                 mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());

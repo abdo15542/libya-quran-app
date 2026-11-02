@@ -115,7 +115,9 @@ const QuranAudio = {
         if (np && this._engine === 'native') {
           if (this._nativeEnded) {
             this._nativeEnded = false;
-            await np.play({ path: 'public/' + window.RecitersModule.buildUrl(readerKey, surahNum), seek: 0 });
+            const lp = window.AudioStore && AudioStore.present() ? await AudioStore.localPath(surahNum) : null;
+            if (lp) await np.play({ filePath: lp, seek: 0 });
+            else await np.play({ path: 'public/' + window.RecitersModule.buildUrl(readerKey, surahNum), seek: 0 });
           } else {
             await np.resume();
           }
@@ -149,13 +151,37 @@ const QuranAudio = {
     const failures = [];
     let missingFile = false;
 
+    // منذ 1.4.0: التلاوة تُنزّل إلى الجهاز أولًا (إن لم تكن منزّلة)،
+    // ثم تُشغّل من الملف المحلي. تنزيل السورة المطلوبة له أولوية قصوى.
+    let filePath = null;
+    const store = (window.AudioStore && AudioStore.present()) ? AudioStore : null;
+    if (store) {
+      filePath = await store.localPath(surahNum);
+      if (token !== this._token) return;
+      if (!filePath) {
+        this._note('play-download-first', 'surah ' + surahNum);
+        this._emit('downloading', { readerKey, surahNum });
+        try {
+          filePath = await store.downloadPriority(surahNum);
+        } catch (e) {
+          this._note('play-download-failed', e && e.message);
+          this._dispatchState(false);
+          const err = new Error('تعذّر تنزيل السورة — تحقّق من اتصال الإنترنت ثم أعد المحاولة');
+          this._emit('error', { readerKey, surahNum, error: err.message });
+          throw err;
+        }
+        if (token !== this._token) return;
+        this._note('play-download-done', 'surah ' + surahNum);
+      }
+    }
+
     // المحاولة 1: المشغّل الأصلي
     if (np) {
       try {
         this._engine = 'native';
         this._nativeEnded = false;
         this._bindNative(np);
-        await np.play({ path: 'public/' + url });
+        await np.play(filePath ? { filePath } : { path: 'public/' + url });
         if (token !== this._token) return;
         this._dispatchState(true);
         this._setMediaSession(readerKey, surahNum);
@@ -175,7 +201,10 @@ const QuranAudio = {
     // المحاولة 2: عنصر الصوت القياسي
     try {
       this._engine = 'web';
-      await this._playSrc(url);
+      const webSrc = filePath && window.Capacitor && window.Capacitor.convertFileSrc
+        ? window.Capacitor.convertFileSrc(filePath)
+        : url;
+      await this._playSrc(webSrc);
       if (token !== this._token) return;
       this._dispatchState(true);
       this._setMediaSession(readerKey, surahNum);
@@ -217,7 +246,14 @@ const QuranAudio = {
       const np = this._native();
       if (np && this.currentReader && this.currentSurah) {
         this._nativeEnded = false;
-        np.play({ path: 'public/' + window.RecitersModule.buildUrl(this.currentReader, this.currentSurah), seek: 0 }).catch(() => {});
+        const surah = this.currentSurah;
+        const fallback = () => np.play({ path: 'public/' + window.RecitersModule.buildUrl(this.currentReader, surah), seek: 0 }).catch(() => {});
+        if (window.AudioStore && AudioStore.present()) {
+          AudioStore.localPath(surah).then(lp => {
+            if (lp) np.play({ filePath: lp, seek: 0 }).catch(() => {});
+            else fallback();
+          }).catch(fallback);
+        } else fallback();
       }
     } else if (this.player) {
       this.player.currentTime = 0;
