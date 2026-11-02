@@ -94,14 +94,15 @@ async function init() {
       document.getElementById('progress-fill').style.width = Math.round(p * 100) + '%';
     });
 
-    if (window.QuranSearch) {
-      status.textContent = 'بناء فهرس البحث...';
-      QuranSearch.build(state.data, state.surahsMeta);
-    }
+    // فهرس البحث يُبنى كسولاً بعد ظهور التطبيق (ensureSearchIndex) حتى لا يعطّل بدء التشغيل
 
     status.textContent = 'جاهز!';
     document.getElementById('progress-fill').style.width = '100%';
-    setTimeout(() => { showApp(); }, 400);
+    setTimeout(() => {
+      showApp();
+      // بناء فهرس البحث في الخلفية بعد استقرار الواجهة
+      setTimeout(ensureSearchIndex, 2500);
+    }, 400);
   } catch (e) {
     document.getElementById('loading-status').textContent = 'خطأ: ' + e.message;
     console.error(e);
@@ -640,64 +641,24 @@ window.addEventListener('audio-ended', () => {
   audioState.isPlaying = false;
 });
 
-// ==================== تحميل السورة أوفلاين ====================
+// ==================== الصوت المدمج (بديل تحميل السورة أوفلاين) ====================
+// التلاوة كاملة مدمجة داخل التطبيق منذ 1.2.0 — لا تحميل ولا حذف ولا كاش شبكي.
 async function downloadCurrentSurah() {
-  const url = getAudioUrl(state.currentSurah);
-  const surah = state.data?.surahs?.[state.currentSurah - 1];
-  const name = surah?.name || 'السورة';
-
-  showUpdateToast('📥 جاري تحميل سورة ' + name + '...');
-
-  try {
-    const cache = await caches.open('libya-quran-audio-v1');
-    const cached = await cache.match(url);
-
-    if (cached) {
-      showUpdateToast('✅ السورة محمّلة مسبقاً');
-      return;
-    }
-
-    await cache.add(url);
-    showUpdateToast('✅ تم تحميل سورة ' + name + ' — يمكنك تشغيلها بدون إنترنت');
-  } catch (e) {
-    console.warn('فشل تحميل السورة:', e);
-    showUpdateToast('❌ فشل التحميل: ' + e.message);
-  }
+  showUpdateToast('🎧 التلاوة مدمجة داخل التطبيق — تعمل بدون إنترنت');
 }
 
-// فحص إذا كانت السورة محمّلة
 async function isSurahDownloaded(surahNum) {
-  try {
-    const url = getAudioUrl(surahNum);
-    const cache = await caches.open('libya-quran-audio-v1');
-    const cached = await cache.match(url);
-    return !!cached;
-  } catch (e) {
-    return false;
-  }
+  return true; // كل السور مدمجة
 }
 
-// حذف السورة المحمّلة
 async function deleteSurahDownload(surahNum) {
-  try {
-    const url = getAudioUrl(surahNum);
-    const cache = await caches.open('libya-quran-audio-v1');
-    await cache.delete(url);
-    return true;
-  } catch (e) {
-    return false;
-  }
+  showUpdateToast('🎧 التلاوة مدمجة داخل التطبيق ولا تُحذف');
+  return false;
 }
 
-// إحصاءات الصوت المحمّل
 async function getAudioCacheStats() {
-  try {
-    const cache = await caches.open('libya-quran-audio-v1');
-    const keys = await cache.keys();
-    return { count: keys.length };
-  } catch (e) {
-    return { count: 0 };
-  }
+  if (window.AudioDownloader) return AudioDownloader.getStats();
+  return { count: 114, bytes: 0 };
 }
 
 // ==================== شريط الأدوات العلوي ====================// ==================== شريط الأدوات العلوي ====================
@@ -849,24 +810,16 @@ function openSettingsNew() {
       </select>
 
       <div class="audio-download-box" id="audio-download-box">
-        <div class="audio-download-header">🎵 المصحف الصوتي</div>
+        <div class="audio-download-header">🎵 المصحف الصوتي — مدمج بالكامل</div>
         <div class="audio-download-info" id="audio-stats-text">
           ⏳ جاري حساب...
         </div>
         <div class="audio-progress-bar">
           <div class="audio-progress-fill" id="audio-progress-fill" style="width:0%"></div>
         </div>
-        <div class="audio-progress-label" id="audio-progress-label"></div>
-        <div class="audio-download-actions">
-          <button class="audio-dl-btn-primary" id="audio-dl-btn" onclick="startAudioDownload()">
-            ⬇️ تحميل المصحف الصوتي
-          </button>
-          <button class="audio-dl-btn-danger" id="audio-del-btn" onclick="deleteAudioDownload()">
-            🗑️ حذف الملفات الصوتية
-          </button>
-        </div>
         <div class="audio-download-note">
-          💡 التحميل يستهلك ~800 ميجابايت — يُنصح باستخدام WiFi
+          🎧 تلاوة عبد الباسط عبد الصمد كاملة (114 سورة) مدمجة داخل التطبيق —
+          تعمل فوراً وبدون إنترنت نهائياً، بلا تحميل وبلا مساحة إضافية.
         </div>
       </div>
 
@@ -893,26 +846,9 @@ function openSettingsNew() {
   // احسب الإحصاءات
   updateAudioStatsUI();
 
-  // زر إيقاف تحميل الصوت + عدّاد المحفوظ الصحيح من وحدة الحفظ
+  // عدّاد المحفوظ الصحيح من وحدة الحفظ
   const body = document.getElementById('modal-body');
   if (body) {
-    const actions = body.querySelector('.audio-download-actions');
-    if (actions && !actions.querySelector('[data-cancel-dl]')) {
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'audio-dl-btn-danger';
-      cancel.dataset.cancelDl = '1';
-      cancel.textContent = '⏹ إيقاف التحميل';
-      cancel.onclick = function () {
-        if (window.AudioDownloader && AudioDownloader.isDownloading()) {
-          AudioDownloader.cancel();
-          showUpdateToast('⏹ سيتوقف التحميل بعد السورة الحالية');
-        } else {
-          showUpdateToast('لا يوجد تحميل جارٍ');
-        }
-      };
-      actions.appendChild(cancel);
-    }
     if (window.MemoModule) {
       MemoModule.stats().then(function (s) {
         const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
@@ -935,7 +871,7 @@ async function updateAudioStatsUI() {
     const sizeMB = (stats.bytes / 1024 / 1024).toFixed(1);
     const box = document.getElementById('audio-stats-text');
     if (box) {
-      box.innerHTML = '📦 محمّل: <strong>' + stats.count + ' / 114</strong> سورة (' + sizeMB + ' MB)';
+      box.innerHTML = '🎧 مدمجة داخل التطبيق: <strong>' + stats.count + ' / 114</strong> سورة (' + sizeMB + ' MB) — تعمل بدون إنترنت';
     }
     
     const pct = Math.round((stats.count / 114) * 100);
@@ -946,135 +882,7 @@ async function updateAudioStatsUI() {
   }
 }
 
-async function startAudioDownload() {
-  console.log('🟢 startAudioDownload() استُدعيت');
-  
-  const btn = document.getElementById('audio-dl-btn');
-  const label = document.getElementById('audio-progress-label');
-  const fill = document.getElementById('audio-progress-fill');
-  
-  // فحص 1: الوحدة محمّلة؟
-  if (!window.AudioDownloader) {
-    console.error('❌ AudioDownloader غير محمّلة');
-    showUpdateToast('❌ وحدة التحميل غير محمّلة');
-    return;
-  }
-
-  // فحص 2: التحميل جارٍ؟
-  if (AudioDownloader.isDownloading()) {
-    showUpdateToast('⚠ التحميل جارٍ بالفعل');
-    return;
-  }
-
-  // فحص 3: قائمة القراء موجودة؟
-  if (!window.READERS) {
-    console.error('❌ window.READERS غير معرّف');
-    showUpdateToast('❌ قائمة القراء غير محمّلة');
-    return;
-  }
-
-  // فحص 4: القارئ المختار صالح؟
-  let reader = window.READERS[state.reader];
-  if (!reader) {
-    console.warn('⚠ القارئ "' + state.reader + '" غير موجود، استخدام الأول');
-    state.reader = Object.keys(window.READERS)[0];
-    reader = window.READERS[state.reader];
-  }
-  
-  console.log('🎧 القارئ:', state.reader, reader.name);
-
-  // فحص 5: المصحف محمّل؟
-  if (!state.data || !state.data.surahs || !state.data.surahs.length) {
-    console.error('❌ المصحف غير محمّل بعد');
-    showUpdateToast('❌ انتظر تحميل المصحف أولاً');
-    return;
-  }
-
-  // نافذة تأكيد
-  const confirmMsg = 
-    'سيتم تحميل: ' + reader.name + '\n\n' +
-    'الحجم المتوقع: ~800 ميجابايت\n' +
-    'الوقت: 20-60 دقيقة\n\n' +
-    '💡 يعمل على أي شبكة (يُفضل WiFi)\n\n' +
-    'هل تريد المتابعة؟';
-  
-  if (!confirm(confirmMsg)) return;
-
-  if (btn) { 
-    btn.disabled = true; 
-    btn.textContent = '⏳ جاري التحميل...'; 
-  }
-
-  // اجعل المصحف متاحاً للـ downloader
-  window.QURAN_DATA_CACHE = state.data;
-
-  let totalSize = 0;
-  let downloaded = 0;
-
-  try {
-    console.log('🚀 بدء التحميل...');
-    
-    await AudioDownloader.downloadAll(state.reader, (progress) => {
-      const pct = Math.round((progress.completed / progress.total) * 100);
-      if (fill) fill.style.width = pct + '%';
-      
-      if (progress.size) totalSize += progress.size;
-      const sizeMB = (totalSize / 1024 / 1024).toFixed(1);
-      
-      if (label) {
-        const status = progress.status === 'done' ? '✅'
-          : progress.status === 'failed' ? '❌'
-          : progress.status === 'skip' ? '⏭'
-          : '⏳';
-        label.innerHTML = 
-          status + ' سورة ' + progress.current + 
-          ' (' + (progress.surahName || '') + ')<br>' +
-          progress.completed + ' / ' + progress.total + 
-          ' — ' + pct + '% — ' + sizeMB + ' MB' +
-          (progress.error ? '<br><span style="color:#c00">خطأ: ' + progress.error + '</span>' : '');
-      }
-      
-      if (progress.status === 'done') {
-        downloaded++;
-        console.log('✅ ' + progress.current + ' — ' + (progress.surahName || ''));
-      }
-    });
-
-    const stats = await AudioDownloader.getStats();
-    const finalMB = (stats.bytes / 1024 / 1024).toFixed(1);
-    
-    console.log('🎉 اكتمل!', stats.count, 'سورة،', finalMB, 'MB');
-    showUpdateToast('✅ اكتمل! ' + stats.count + '/114 سورة — ' + finalMB + ' MB');
-    await updateAudioStatsUI();
-    
-    if (btn) { 
-      btn.textContent = '✅ مكتمل (' + finalMB + ' MB)'; 
-      btn.style.background = '#27ae60'; 
-    }
-  } catch (e) {
-    console.error('❌ فشل التحميل:', e);
-    showUpdateToast('❌ فشل: ' + e.message);
-    if (btn) { 
-      btn.disabled = false; 
-      btn.textContent = '⬇️ إعادة المحاولة'; 
-    }
-  }
-}
-
-
-
-async function deleteAudioDownload() {
-  if (!confirm('سيتم حذف جميع الملفات الصوتية المحمّلة. هل أنت متأكد؟')) return;
-  try {
-    await AudioDownloader.deleteAll();
-    showUpdateToast('🗑️ تم حذف جميع الملفات الصوتية');
-    await updateAudioStatsUI();
-  } catch (e) {
-    showUpdateToast('❌ فشل الحذف: ' + e.message);
-  }
-}
-
-
+// (أُزيلت وظائف تحميل/حذف الصوت في 1.2.0 — التلاوة مدمجة داخل التطبيق)
 
 function setFontSize(v) {
   state.fontSize = parseFloat(v);
@@ -1110,14 +918,24 @@ function applyViewMode() {
 }
 
 // ==================== البحث في القرآن ====================
+let _searchBuilt = false;
+function ensureSearchIndex() {
+  if (_searchBuilt || !window.QuranSearch || !state.data) return;
+  try {
+    QuranSearch.build(state.data, state.surahsMeta);
+    _searchBuilt = true;
+  } catch (e) { console.warn('فهرس البحث:', e && e.message); }
+}
+
 function openSearchModal() {
+  ensureSearchIndex();
   openModal('🔍 البحث في القرآن', `
     <div class="search-modal-content">
       <input type="text" id="quran-search-input" class="search-input-lg"
              placeholder="اكتب كلمة أو آية... مثال: الرحمن، الصبر، الله" autofocus />
       <div id="search-summary" class="search-summary"></div>
       <div id="search-results-container" class="search-results">
-        <div class="no-results">اكتب حرفين على الأقل للبحث في 6236 آية</div>
+        <div class="no-results">اكتب حرفين على الأقل للبحث في 6214 آية</div>
       </div>
     </div>
   `);
@@ -1272,8 +1090,6 @@ window.setViewMode = setViewMode;
 window.toggleTajweedFromModal = toggleTajweedFromModal;
 window.showVerseTafsir = showVerseTafsir;
 window.openMemoSection = openMemoSection;
-window.startAudioDownload = startAudioDownload;
-window.deleteAudioDownload = deleteAudioDownload;
 window.updateAudioStatsUI = updateAudioStatsUI;
 window.downloadCurrentSurah = downloadCurrentSurah;
 window.isSurahDownloaded = isSurahDownloaded;

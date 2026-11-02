@@ -1,11 +1,10 @@
 // ============ مشغل الصوت ============
-// - يقرأ من الملفات المحمّلة (IndexedDB) أولاً ثم من الإنترنت
-// - استئناف بعد الإيقاف المؤقت بدل إعادة التحميل
-// - يحتفظ بتلاوة واحدة فقط في الذاكرة
+// - التلاوة مدمجة داخل التطبيق: ملفات Opus محلية (audio/NNN.ogg)
+// - التشغيل مباشرة من الجهاز: بدء فوري، تقديم/ترجيع فوري، بدون أي شبكة
+// - عنصر صوت واحد يُعاد استخدامه، واستئناف بعد الإيقاف المؤقت
 
 const QuranAudio = {
   player: null,
-  currentBlobUrl: null,
   currentReader: null,
   currentSurah: null,
   repeatTarget: 0,
@@ -17,102 +16,62 @@ const QuranAudio = {
     return !!this.player && this.currentReader === readerKey && this.currentSurah === surahNum;
   },
 
-  async _fetchBlob(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const blob = await res.blob();
-    if (!blob.size) throw new Error('ملف فارغ');
-    return blob;
-  },
-
-  async _getBlob(readerKey, surahNum) {
-    // 1) الملف المحمّل أوفلاين
-    if (window.AudioDownloader) {
-      try {
-        const saved = await AudioDownloader.get(readerKey + '_' + surahNum);
-        if (saved && saved.size) return { blob: saved, source: 'offline' };
-      } catch (e) {
-        console.warn('قراءة الملف المحمّل فشلت:', e.message);
-      }
-    }
-
-    // 2) من الإنترنت
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      throw new Error('لا يوجد اتصال بالإنترنت — حمّل المصحف الصوتي من الإعدادات للاستماع بدون إنترنت');
-    }
-
-    const urls = [
-      window.RecitersModule.buildUrl(readerKey, surahNum),
-      window.RecitersModule.buildUrlFallback(readerKey, surahNum),
-    ].filter(Boolean);
-    if (!urls.length) throw new Error('لا يوجد رابط لهذه التلاوة');
-
-    let lastError = null;
-    for (const url of urls) {
-      try {
-        return { blob: await this._fetchBlob(url), source: 'online', url };
-      } catch (e) {
-        lastError = e;
-        console.warn('فشل الرابط:', url, e.message);
-      }
-    }
-    throw lastError || new Error('تعذّر تحميل التلاوة');
-  },
-
-  async playUrl(url) {
-    const blob = await this._fetchBlob(url);
-    this.currentReader = null;
-    this.currentSurah = null;
-    return this._playBlob(blob);
-  },
-
-  async play(readerKey, surahNum) {
-    // نفس التلاوة محمّلة: استئناف فقط
-    if (this.isCurrent(readerKey, surahNum)) {
-      if (this.player.ended) this.player.currentTime = 0;
-      await this.player.play();
-      return;
-    }
-
-    const token = ++this._token;
-    try {
-      const { blob, source } = await this._getBlob(readerKey, surahNum);
-      if (token !== this._token) return; // طُلبت تلاوة أحدث
-      this.currentReader = readerKey;
-      this.currentSurah = surahNum;
-      await this._playBlob(blob);
-      this._setMediaSession(readerKey, surahNum);
-      this._emit('success', { readerKey, surahNum, source });
-    } catch (e) {
-      this._emit('error', { readerKey, surahNum, error: e.message });
-      throw e;
-    }
-  },
-
-  _playBlob(blob) {
-    if (this.player) {
-      const old = this.player;
-      old.onpause = old.onplay = old.onended = old.onerror = null;
-      try { old.pause(); } catch (e) {}
-    }
-    if (this.currentBlobUrl) {
-      try { URL.revokeObjectURL(this.currentBlobUrl); } catch (e) {}
-    }
-
-    const blobUrl = URL.createObjectURL(blob);
-    this.currentBlobUrl = blobUrl;
-
+  _ensurePlayer() {
+    if (this.player) return this.player;
     const audio = new Audio();
     audio.preload = 'auto';
-    audio.src = blobUrl;
     audio.onended = () => this._onEnd();
     audio.onerror = () => this._emit('error', { code: audio.error && audio.error.code });
     audio.onplay = () => window.dispatchEvent(new CustomEvent('audio-state', { detail: { playing: true } }));
     audio.onpause = () => {
       if (!audio.ended) window.dispatchEvent(new CustomEvent('audio-state', { detail: { playing: false } }));
     };
-
     this.player = audio;
+    return audio;
+  },
+
+  async play(readerKey, surahNum) {
+    // نفس التلاوة جاهزة: استئناف فقط
+    if (this.isCurrent(readerKey, surahNum)) {
+      if (this.player.ended) this.player.currentTime = 0;
+      await this.player.play();
+      return;
+    }
+
+    const url = window.RecitersModule ? window.RecitersModule.buildUrl(readerKey, surahNum) : null;
+    if (!url) {
+      const err = new Error('لا توجد تلاوة مدمجة لهذه السورة');
+      this._emit('error', { readerKey, surahNum, error: err.message });
+      throw err;
+    }
+
+    const token = ++this._token;
+    this.currentReader = readerKey;
+    this.currentSurah = surahNum;
+    try {
+      await this._playSrc(url);
+      if (token !== this._token) return; // طُلبت تلاوة أحدث
+      this._setMediaSession(readerKey, surahNum);
+      this._emit('success', { readerKey, surahNum, source: 'builtin' });
+    } catch (e) {
+      this._emit('error', { readerKey, surahNum, error: e.message });
+      throw e;
+    }
+  },
+
+  async playUrl(url) {
+    this.currentReader = null;
+    this.currentSurah = null;
+    return this._playSrc(url);
+  },
+
+  _playSrc(src) {
+    const audio = this._ensurePlayer();
+    if (audio.getAttribute('src') !== src) {
+      audio.src = src;
+    } else if (audio.ended) {
+      audio.currentTime = 0;
+    }
     return audio.play();
   },
 

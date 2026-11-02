@@ -9,20 +9,5 @@
   "android": {
     "allowMixedContent": false,
     "webContentsDebuggingEnabled": false
-  },
-  "plugins": {
-    "CapacitorUpdater": {
-      "autoUpdate": false,
-      "appReadyTimeout": 30000,
-      "resetWhenUpdate": true,
-      "autoDeleteFailed": true,
-      "autoDeletePrevious": true,
-      "responseTimeout": 30,
-      "statsUrl": ""
-    },
-    "LocalNotifications": {
-      "smallIcon": "ic_stat_icon_config_sample",
-      "iconColor": "#0a3d2c"
-    }
   }
 }

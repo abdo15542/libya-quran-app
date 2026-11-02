@@ -6,6 +6,8 @@ let searchIndex = null;
 function normalizeArabic(text) {
   if (!text) return '';
   return String(text)
+    // واو الرسم العثماني مع ألف خنجرية (الصلوٰة، الزكوٰة، الحيوٰة) → ألف كما تُكتب إملائيًا
+    .replace(/و\u0670/g, 'ا')
     // الألف الخنجرية → ألف عادي
     .replace(/\u0670/g, 'ا')
     // الألف الوصلية (ٱ) → ألف عادي
@@ -34,12 +36,15 @@ function buildSearchIndex(quranData, surahsMeta) {
 
     (surah.verses || []).forEach(verse => {
       const text = verse.text || '';
+      const norm = normalizeArabic(text);
       docs.push({
         s: surahIdx + 1,
         sName: sName,
         a: verse.number,
         text: text,
-        norm: normalizeArabic(text),
+        norm: norm,
+        // هيكل بلا ألفات: يطابق اختلافات الرسم (الرحمٰن تُبحث «الرحمن»)
+        skel: norm.replace(/ا/g, ''),
       });
     });
   });
@@ -62,6 +67,7 @@ function searchQuran(query) {
 
   const words = normalized.split(/\s+/).filter(w => w.length >= 2);
   if (!words.length) return empty;
+  const wordSkels = words.map(w => w.replace(/ا/g, ''));
 
   const results = [];
   let totalMatches = 0;
@@ -72,12 +78,23 @@ function searchQuran(query) {
     let matches = 0;
     let allMatched = true;
 
-    for (const word of words) {
+    for (let wi = 0; wi < words.length; wi++) {
+      const word = words[wi];
       const regex = new RegExp(escapeRegex(word), 'g');
       const m = doc.norm.match(regex);
       if (m) {
         matches += m.length;
         score += m.length * 2;
+      } else if (wordSkels[wi] && doc.skel) {
+        // مطابقة احتياطية بالهيكل بلا ألفات (اختلافات الرسم العثماني)
+        const sm = doc.skel.match(new RegExp(escapeRegex(wordSkels[wi]), 'g'));
+        if (sm) {
+          matches += sm.length;
+          score += sm.length;
+        } else {
+          allMatched = false;
+          break;
+        }
       } else {
         allMatched = false;
         break;
